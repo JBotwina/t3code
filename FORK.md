@@ -56,8 +56,16 @@ possible for the same reason — new files never conflict.
 
 ## Building the app
 
-    pnpm dist:desktop:dmg:arm64
+    scripts/install-t2-code.sh --launch
 
-The unsigned `.dmg` lands in `dist/`. Auto-update stays inert unless
+Builds, quits any running copy, replaces `/Applications/T2 Code.app`, clears
+the quarantine flag, and opens it. `--no-build` reuses the newest artifact in
+`release/`; `--arch x64` cross-builds.
+
+To build without installing:
+
+    CSC_IDENTITY_AUTO_DISCOVERY=false pnpm dist:desktop:dmg:arm64
+
+The unsigned `.dmg` and `.zip` land in `release/`. Auto-update stays inert unless
 `T3CODE_DESKTOP_UPDATE_REPOSITORY` is set, so the fork will never replace
 itself with an upstream release.
