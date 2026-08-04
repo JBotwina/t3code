@@ -1669,7 +1669,7 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("read-aloud-engine")}
-          description="How assistant responses are spoken. ElevenLabs Flash gives karaoke word highlight; System uses the free macOS voice."
+          description="How assistant responses are spoken. ElevenLabs gives karaoke word highlight; System uses the free macOS voice."
           control={
             <Select
               value={settings.readAloud?.engine ?? "system"}
@@ -1681,7 +1681,7 @@ export function GeneralSettingsPanel() {
               <SelectTrigger size="sm" className="w-48" aria-label="Read aloud engine">
                 <SelectValue>
                   {(settings.readAloud?.engine ?? "system") === "elevenlabs-flash"
-                    ? "ElevenLabs Flash"
+                    ? "ElevenLabs"
                     : "System"}
                 </SelectValue>
               </SelectTrigger>
@@ -1690,7 +1690,7 @@ export function GeneralSettingsPanel() {
                   System
                 </SelectItem>
                 <SelectItem hideIndicator value="elevenlabs-flash">
-                  ElevenLabs Flash
+                  ElevenLabs
                 </SelectItem>
               </SelectPopup>
             </Select>

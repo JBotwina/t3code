@@ -2,8 +2,18 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 
-export const READ_ALOUD_ELEVENLABS_VOICE_ID = "pNInz6obpgDQGcFmaJgB";
-export const READ_ALOUD_ELEVENLABS_MODEL_ID = "eleven_flash_v2_5";
+/**
+ * Rachel: mid-register and evenly paced. Read-aloud speaks one sentence per
+ * request, so a theatrical voice re-enters dramatically on every sentence;
+ * neutral prosody is what makes consecutive sentences sound continuous.
+ */
+export const READ_ALOUD_ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
+/**
+ * Turbo over Flash: Flash's latency optimization is what reads as robotic.
+ * The extra ~150ms per sentence is hidden by the next-sentence prefetch in
+ * ReadAloudSurface, so only the very first sentence pays it.
+ */
+export const READ_ALOUD_ELEVENLABS_MODEL_ID = "eleven_turbo_v2_5";
 export const READ_ALOUD_API_KEY_SECRET_NAME = "tts-elevenlabs-api-key";
 
 export const ReadAloudEngine = Schema.Literals(["elevenlabs-flash", "system"]);
