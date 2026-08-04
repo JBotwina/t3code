@@ -7,10 +7,11 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
 import * as Electron from "electron";
+import { FORK_BRAND } from "@t3tools/shared/forkBrand";
 
 export const DESKTOP_HOST = "app";
-export const DESKTOP_PRODUCTION_SCHEME = "t3code";
-export const DESKTOP_DEVELOPMENT_SCHEME = "t3code-dev";
+export const DESKTOP_PRODUCTION_SCHEME = FORK_BRAND.scheme;
+export const DESKTOP_DEVELOPMENT_SCHEME = FORK_BRAND.schemeDev;
 
 export function getDesktopScheme(isDevelopment: boolean): string {
   return isDevelopment ? DESKTOP_DEVELOPMENT_SCHEME : DESKTOP_PRODUCTION_SCHEME;

@@ -4,6 +4,7 @@ import * as NodeModule from "node:module";
 
 import { fromYaml } from "@t3tools/shared/schemaYaml";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { FORK_BRAND } from "@t3tools/shared/forkBrand";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import rootPackageJson from "../package.json" with { type: "json" };
@@ -35,7 +36,7 @@ import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
-const DESKTOP_APP_ID = "com.t3tools.t3code";
+const DESKTOP_APP_ID = FORK_BRAND.appId;
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -1491,10 +1492,12 @@ export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIcon
     };
   }
 
+  // T2 Code ships the blueprint (dev-channel) art so it is distinguishable
+  // from an installed T3 Code in the Dock and Spotlight.
   return {
-    macIconPng: BRAND_ASSET_PATHS.productionMacIconPng,
-    linuxIconPng: BRAND_ASSET_PATHS.productionLinuxIconPng,
-    windowsIconIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
+    macIconPng: BRAND_ASSET_PATHS.developmentDesktopIconPng,
+    linuxIconPng: BRAND_ASSET_PATHS.developmentUniversalIconPng,
+    windowsIconIco: BRAND_ASSET_PATHS.developmentWindowsIconIco,
   };
 }
 
@@ -1517,8 +1520,8 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 
 export function resolveDesktopProductName(version: string): string {
   return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "T3 Code (Nightly)"
-    : (desktopPackageJson.productName ?? "T3 Code");
+    ? `${FORK_BRAND.baseName} (Nightly)`
+    : (desktopPackageJson.productName ?? FORK_BRAND.baseName);
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -1538,7 +1541,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
-    artifactName: "T3-Code-${version}-${arch}.${ext}",
+    // electron-builder interpolates ${version}/${arch}/${ext} itself.
+    artifactName: FORK_BRAND.artifactPrefix + "-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [...DESKTOP_FILE_EXCLUSIONS],
     directories: {
@@ -1570,8 +1574,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       category: "public.app-category.developer-tools",
       protocols: [
         {
-          name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
+          name: FORK_BRAND.baseName,
+          schemes: [FORK_BRAND.scheme, FORK_BRAND.schemeDev],
         },
       ],
       ...(macPasskeySigning
@@ -1586,7 +1590,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "linux") {
     buildConfig.linux = {
       target: [target],
-      executableName: "t3code",
+      executableName: FORK_BRAND.linuxExecutableName,
       icon: "icons",
       category: "Development",
       // electron-builder turns these into MimeType=x-scheme-handler/<scheme>;
@@ -1594,13 +1598,13 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // t3code:// OAuth callbacks to the app.
       protocols: [
         {
-          name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
+          name: FORK_BRAND.baseName,
+          schemes: [FORK_BRAND.scheme, FORK_BRAND.schemeDev],
         },
       ],
       desktop: {
         entry: {
-          StartupWMClass: "t3code",
+          StartupWMClass: FORK_BRAND.linuxExecutableName,
         },
       },
     };

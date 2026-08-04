@@ -1,3 +1,4 @@
+import { FORK_BRAND } from "@t3tools/shared/forkBrand";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -81,7 +82,7 @@ export function resolveEarlyLinuxElectronOptions(
 ): EarlyLinuxElectronOptions {
   const preference = resolveEarlyLinuxPasswordStorePreference(input);
   return {
-    linuxWmClass: isDevelopmentEnvironment(input.env) ? "t3code-dev" : "t3code",
+    linuxWmClass: isDevelopmentEnvironment(input.env) ? FORK_BRAND.schemeDev : FORK_BRAND.scheme,
     passwordStore: resolveLinuxPasswordStoreSwitch({
       preference,
       env: input.env,

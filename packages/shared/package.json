@@ -191,6 +191,10 @@
       "types": "./src/chatList.ts",
       "import": "./src/chatList.ts"
     },
+    "./forkBrand": {
+      "types": "./src/forkBrand.ts",
+      "import": "./src/forkBrand.ts"
+    },
     "./hostProcess": {
       "types": "./src/hostProcess.ts",
       "import": "./src/hostProcess.ts"

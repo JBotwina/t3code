@@ -38,7 +38,9 @@ export const WEB_ASSET_CHANNELS = ["latest", "nightly"] as const;
 export type WebAssetChannel = (typeof WEB_ASSET_CHANNELS)[number];
 
 export function resolveWebAssetBrandForChannel(channel: WebAssetChannel): WebAssetBrand {
-  return channel === "nightly" ? "nightly" : "production";
+  // T2 Code uses the blueprint (development) favicons so browser tabs and the
+  // splash screen match its desktop icon.
+  return channel === "nightly" ? "nightly" : "development";
 }
 
 export function resolveWebAssetBrandForPackageVersion(version: string): WebAssetBrand {
