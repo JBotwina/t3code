@@ -11,6 +11,11 @@ export type PlaybackHandle = {
   readonly resume: () => void;
   readonly stop: () => void;
   readonly isPaused: () => boolean;
+  /**
+   * Change speed mid-sentence. Web Audio applies it immediately; Web Speech
+   * cannot re-rate a live utterance, so it takes effect on the next sentence.
+   */
+  readonly setRate: (rate: number) => void;
 };
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
@@ -24,24 +29,35 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 export async function playElevenLabsAudio(options: {
   readonly audioBase64: string;
   readonly words: readonly ReadAloudWordTiming[];
+  readonly rate?: number;
   readonly onWord: (tick: WordTick | null) => void;
   readonly onEnded: () => void;
   readonly onError: (message: string) => void;
 }): Promise<PlaybackHandle> {
   const ctx = new AudioContext();
   let source: AudioBufferSourceNode | null = null;
-  let startedAt = 0;
-  let pausedAt: number | null = null;
-  let offsetWhenPaused = 0;
+  // Media position (in the audio's own timeline) at the last (re)start, plus
+  // the wall clock reading then. Word timings are in media time, so playback
+  // rate only shows up here as a multiplier on elapsed wall time.
+  let mediaOffsetSec = 0;
+  let wallStartedAt = 0;
+  let rate = options.rate ?? 1;
+  let paused = false;
   let raf = 0;
   let stopped = false;
   let lastWord = -1;
+  // Stopping a source fires `onended`; without this, a pause or a rate change
+  // would look like the sentence finished and advance to the next one.
+  let sourceGeneration = 0;
 
   const buffer = await ctx.decodeAudioData(base64ToArrayBuffer(options.audioBase64));
 
+  const mediaPositionSec = () =>
+    paused ? mediaOffsetSec : mediaOffsetSec + (ctx.currentTime - wallStartedAt) * rate;
+
   const tick = () => {
-    if (stopped || pausedAt !== null) return;
-    const elapsedMs = (ctx.currentTime - startedAt + offsetWhenPaused) * 1000;
+    if (stopped || paused) return;
+    const elapsedMs = mediaPositionSec() * 1000;
     let wordIndex = -1;
     for (let i = 0; i < options.words.length; i++) {
       const w = options.words[i]!;
@@ -63,18 +79,32 @@ export async function playElevenLabsAudio(options: {
     raf = requestAnimationFrame(tick);
   };
 
+  const stopSource = () => {
+    sourceGeneration += 1;
+    try {
+      source?.stop();
+    } catch {
+      // already stopped
+    }
+    source = null;
+    cancelAnimationFrame(raf);
+  };
+
   const startFrom = (offsetSec: number) => {
+    sourceGeneration += 1;
+    const generation = sourceGeneration;
     source = ctx.createBufferSource();
     source.buffer = buffer;
+    source.playbackRate.value = rate;
     source.connect(ctx.destination);
     source.onended = () => {
-      if (stopped || pausedAt !== null) return;
+      if (stopped || paused || generation !== sourceGeneration) return;
       cancelAnimationFrame(raf);
       options.onWord(null);
       options.onEnded();
     };
-    startedAt = ctx.currentTime;
-    offsetWhenPaused = offsetSec;
+    mediaOffsetSec = offsetSec;
+    wallStartedAt = ctx.currentTime;
     source.start(0, offsetSec);
     raf = requestAnimationFrame(tick);
   };
@@ -83,45 +113,48 @@ export async function playElevenLabsAudio(options: {
 
   return {
     pause: () => {
-      if (stopped || pausedAt !== null || !source) return;
-      pausedAt = ctx.currentTime;
-      offsetWhenPaused += pausedAt - startedAt;
-      try {
-        source.stop();
-      } catch {
-        // already stopped
-      }
-      source = null;
-      cancelAnimationFrame(raf);
+      if (stopped || paused || !source) return;
+      mediaOffsetSec = mediaPositionSec();
+      paused = true;
+      stopSource();
     },
     resume: () => {
-      if (stopped || pausedAt === null) return;
-      pausedAt = null;
-      startFrom(offsetWhenPaused);
+      if (stopped || !paused) return;
+      paused = false;
+      startFrom(mediaOffsetSec);
     },
     stop: () => {
       stopped = true;
-      cancelAnimationFrame(raf);
-      try {
-        source?.stop();
-      } catch {
-        // ignore
-      }
-      source = null;
+      stopSource();
       void ctx.close();
       options.onWord(null);
     },
-    isPaused: () => pausedAt !== null,
+    isPaused: () => paused,
+    setRate: (next: number) => {
+      if (stopped || next === rate) return;
+      if (paused || !source) {
+        rate = next;
+        return;
+      }
+      // Rebase onto the current position first, or the elapsed-time math would
+      // retroactively re-scale everything already played.
+      const position = mediaPositionSec();
+      rate = next;
+      stopSource();
+      startFrom(position);
+    },
   };
 }
 
 export function playWebSpeech(options: {
   readonly text: string;
+  readonly rate?: number;
   readonly onWord: (tick: WordTick | null) => void;
   readonly onEnded: () => void;
   readonly onError: (message: string) => void;
 }): PlaybackHandle {
   const utterance = new SpeechSynthesisUtterance(options.text);
+  utterance.rate = options.rate ?? 1;
   let paused = false;
   let stopped = false;
 
@@ -161,5 +194,9 @@ export function playWebSpeech(options: {
       options.onWord(null);
     },
     isPaused: () => paused,
+    setRate: () => {
+      // SpeechSynthesisUtterance.rate is read-only once speaking has started;
+      // ReadAloudSurface passes the current rate into the next sentence.
+    },
   };
 }

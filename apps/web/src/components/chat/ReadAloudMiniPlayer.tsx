@@ -1,9 +1,55 @@
 import { PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, XIcon } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 
-import { readAloudController, useReadAloudSnapshot } from "../../lib/readAloud/controller";
+import {
+  READ_ALOUD_RATES,
+  readAloudController,
+  useReadAloudRate,
+  useReadAloudSnapshot,
+} from "../../lib/readAloud/controller";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuPortal,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "../ui/menu";
 import { Spinner } from "../ui/spinner";
 import { cn } from "~/lib/utils";
+
+/** 1 → "1×", 1.25 → "1.25×"; trailing zeros read as noise at this size. */
+function formatRate(rate: number): string {
+  return `${rate}\u00d7`;
+}
+
+function SpeedMenu({ rate }: { readonly rate: number }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={`Playback speed: ${formatRate(rate)}`}
+        title="Playback speed"
+        className="flex h-6 min-w-9 items-center justify-center rounded-full px-1.5 text-[11px] text-muted-foreground tabular-nums transition-colors hover:bg-accent hover:text-foreground hover:cursor-pointer"
+      >
+        {formatRate(rate)}
+      </DropdownMenuTrigger>
+      <DropdownMenuPortal>
+        <DropdownMenuContent align="end" sideOffset={6} className="min-w-24">
+          <DropdownMenuRadioGroup
+            value={String(rate)}
+            onValueChange={(value) => readAloudController.setRate(Number(value))}
+          >
+            {READ_ALOUD_RATES.map((option) => (
+              <DropdownMenuRadioItem key={option} value={String(option)} className="tabular-nums">
+                {formatRate(option)}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenuPortal>
+    </DropdownMenu>
+  );
+}
 
 function isTypingTarget(target: EventTarget | null): boolean {
   return (
@@ -52,6 +98,7 @@ function PlayerButton({
  */
 export function ReadAloudMiniPlayer() {
   const snapshot = useReadAloudSnapshot();
+  const rate = useReadAloudRate();
   const active = snapshot !== null;
 
   useEffect(() => {
@@ -117,6 +164,7 @@ export function ReadAloudMiniPlayer() {
       <span className="text-[10px] text-muted-foreground/70 tabular-nums">
         {sentenceIndex + 1}/{sentenceCount}
       </span>
+      <SpeedMenu rate={rate} />
       <PlayerButton label="Stop reading (Esc)" onClick={() => readAloudController.stop()}>
         <XIcon className="size-3.5" />
       </PlayerButton>

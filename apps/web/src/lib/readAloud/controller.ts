@@ -22,11 +22,33 @@ export type ReadAloudOwner = {
   readonly resume: () => void;
   /** Stop audio, clear highlights, and release the claim. */
   readonly halt: () => void;
+  readonly setRate: (rate: number) => void;
 };
 
 let owner: ReadAloudOwner | null = null;
 let snapshot: ReadAloudSnapshot | null = null;
 const listeners = new Set<() => void>();
+
+// ── Playback rate ──────────────────────────────────────────────
+
+export const READ_ALOUD_RATES = [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5] as const;
+export const DEFAULT_READ_ALOUD_RATE = 1;
+const RATE_STORAGE_KEY = "t3code:read-aloud-rate";
+
+function readStoredRate(): number {
+  if (typeof localStorage === "undefined") return DEFAULT_READ_ALOUD_RATE;
+  try {
+    const raw = Number.parseFloat(localStorage.getItem(RATE_STORAGE_KEY) ?? "");
+    return READ_ALOUD_RATES.includes(raw as (typeof READ_ALOUD_RATES)[number])
+      ? raw
+      : DEFAULT_READ_ALOUD_RATE;
+  } catch {
+    // Private mode or a blocked storage partition; the default is fine.
+    return DEFAULT_READ_ALOUD_RATE;
+  }
+}
+
+let rate = readStoredRate();
 
 function emit() {
   for (const listener of listeners) listener();
@@ -71,6 +93,20 @@ export const readAloudController = {
   activeMessageKey(): string | null {
     return snapshot?.messageKey ?? null;
   },
+  rate(): number {
+    return rate;
+  },
+  setRate(next: number) {
+    if (next === rate) return;
+    rate = next;
+    try {
+      localStorage?.setItem(RATE_STORAGE_KEY, String(next));
+    } catch {
+      // Non-persistent is still usable for this session.
+    }
+    owner?.setRate(next);
+    emit();
+  },
 };
 
 function getSnapshot() {
@@ -83,6 +119,18 @@ function getServerSnapshot(): ReadAloudSnapshot | null {
 
 export function useReadAloudSnapshot(): ReadAloudSnapshot | null {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+}
+
+function getRate() {
+  return rate;
+}
+
+function getServerRate() {
+  return DEFAULT_READ_ALOUD_RATE;
+}
+
+export function useReadAloudRate(): number {
+  return useSyncExternalStore(subscribe, getRate, getServerRate);
 }
 
 // ── Synthesized-audio cache ────────────────────────────────────

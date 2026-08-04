@@ -180,6 +180,7 @@ export function ReadAloudSurface({
           if (playingIndexRef.current !== null) publish("playing", playingIndexRef.current);
         },
         halt,
+        setRate: (nextRate) => handleRef.current?.setRate(nextRate),
       });
 
       const speakText = speakableText(sentence.text);
@@ -210,6 +211,7 @@ export function ReadAloudSurface({
         if (engine === "system" || !environmentId) {
           const handle = playWebSpeech({
             text: speakText,
+            rate: readAloudController.rate(),
             onWord,
             onEnded: playNext,
             onError,
@@ -269,6 +271,7 @@ export function ReadAloudSurface({
         const handle = await playElevenLabsAudio({
           audioBase64: cached.audioBase64,
           words: cached.words,
+          rate: readAloudController.rate(),
           onWord,
           onEnded: playNext,
           onError,
