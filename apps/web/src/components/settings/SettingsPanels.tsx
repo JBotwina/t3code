@@ -97,6 +97,7 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 import { DraftInput } from "../ui/draft-input";
+import { Input } from "../ui/input";
 import {
   NumberField,
   NumberFieldDecrement,
@@ -1663,6 +1664,63 @@ export function GeneralSettingsPanel() {
                 }}
               />
             </div>
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("read-aloud-engine")}
+          description="How assistant responses are spoken. ElevenLabs Flash gives karaoke word highlight; System uses the free macOS voice."
+          control={
+            <Select
+              value={settings.readAloud?.engine ?? "system"}
+              onValueChange={(value) => {
+                if (value !== "system" && value !== "elevenlabs-flash") return;
+                updateSettings({ readAloud: { engine: value } });
+              }}
+            >
+              <SelectTrigger size="sm" className="w-48" aria-label="Read aloud engine">
+                <SelectValue>
+                  {(settings.readAloud?.engine ?? "system") === "elevenlabs-flash"
+                    ? "ElevenLabs Flash"
+                    : "System"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="system">
+                  System
+                </SelectItem>
+                <SelectItem hideIndicator value="elevenlabs-flash">
+                  ElevenLabs Flash
+                </SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("read-aloud-api-key")}
+          description={
+            settings.readAloud?.apiKeyConfigured
+              ? "ElevenLabs API key is configured on this server."
+              : "Required for ElevenLabs Flash. Stored in the server secret store."
+          }
+          control={
+            <Input
+              type="password"
+              autoComplete="off"
+              placeholder={settings.readAloud?.apiKeyConfigured ? "••••••••" : "xi-api-key"}
+              className="w-full sm:w-56"
+              aria-label="ElevenLabs API key"
+              onBlur={(event) => {
+                const value = event.currentTarget.value.trim();
+                if (!value) return;
+                updateSettings({ readAloud: { apiKey: value } });
+                event.currentTarget.value = "";
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                event.currentTarget.blur();
+              }}
+            />
           }
         />
       </SettingsSection>

@@ -122,6 +122,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "read-aloud-engine",
+    title: "Read aloud engine",
+    to: "/settings/general",
+  },
+  {
+    id: "read-aloud-api-key",
+    title: "Read aloud API key",
+    to: "/settings/general",
+  },
+  {
     id: "diagnostics",
     title: "Diagnostics",
     to: "/settings/general",

@@ -1178,6 +1178,21 @@ label:has(> select#reasoning-effort) select {
   height: 100%;
 }
 
+/* Read-aloud karaoke highlights (CSS Custom Highlight API) */
+::highlight(read-aloud-hover) {
+  background-color: color-mix(in oklab, #818cf8 28%, transparent);
+}
+::highlight(read-aloud-active) {
+  background-color: color-mix(in oklab, #818cf8 28%, transparent);
+}
+::highlight(read-aloud-word) {
+  background-color: color-mix(in oklab, #4f46e5 55%, transparent);
+  color: #e0e7ff;
+}
+.read-aloud-surface {
+  cursor: text;
+}
+
 /* Chat markdown rendering */
 .chat-markdown {
   min-width: 0;

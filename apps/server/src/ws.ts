@@ -57,6 +57,8 @@ import {
   type TerminalMetadataStreamEvent,
   WS_METHODS,
   WsRpcGroup,
+  ReadAloudProviderError,
+  ReadAloudUnsupportedEngineError,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
@@ -88,6 +90,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
+import * as ElevenLabsTts from "./readAloud/ElevenLabsTts.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -1449,9 +1452,17 @@ const makeWsRpcLayer = (
         [WS_METHODS.serverGetSettings]: (_input) =>
           observeRpcEffect(
             WS_METHODS.serverGetSettings,
-            serverSettings.getSettings.pipe(
-              Effect.map(ServerSettings.redactServerSettingsForClient),
-            ),
+            Effect.gen(function* () {
+              const settings = yield* serverSettings.getSettings;
+              const apiKeyConfigured = yield* ElevenLabsTts.hasElevenLabsApiKey;
+              return ServerSettings.redactServerSettingsForClient({
+                ...settings,
+                readAloud: {
+                  engine: settings.readAloud?.engine ?? "system",
+                  apiKeyConfigured,
+                },
+              });
+            }),
             {
               "rpc.aggregate": "server",
             },
@@ -1459,9 +1470,43 @@ const makeWsRpcLayer = (
         [WS_METHODS.serverUpdateSettings]: ({ patch }) =>
           observeRpcEffect(
             WS_METHODS.serverUpdateSettings,
-            serverSettings
-              .updateSettings(patch)
-              .pipe(Effect.map(ServerSettings.redactServerSettingsForClient)),
+            Effect.gen(function* () {
+              if (patch.readAloud && "apiKey" in patch.readAloud) {
+                yield* ElevenLabsTts.setElevenLabsApiKey(patch.readAloud.apiKey ?? null);
+              }
+              const settings = yield* serverSettings.updateSettings(patch);
+              const apiKeyConfigured = yield* ElevenLabsTts.hasElevenLabsApiKey;
+              return ServerSettings.redactServerSettingsForClient({
+                ...settings,
+                readAloud: {
+                  engine: settings.readAloud?.engine ?? "system",
+                  apiKeyConfigured,
+                },
+              });
+            }),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
+        [WS_METHODS.readAloudSynthesize]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.readAloudSynthesize,
+            Effect.gen(function* () {
+              const settings = yield* serverSettings.getSettings.pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new ReadAloudProviderError({
+                      detail:
+                        cause instanceof Error ? cause.message : "Failed to load server settings",
+                    }),
+                ),
+              );
+              const engine = settings.readAloud?.engine ?? "system";
+              if (engine === "system") {
+                return yield* new ReadAloudUnsupportedEngineError({ engine });
+              }
+              return yield* ElevenLabsTts.synthesizeElevenLabs(input.text);
+            }),
             {
               "rpc.aggregate": "server",
             },

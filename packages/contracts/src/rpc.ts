@@ -151,6 +151,11 @@ import {
 } from "./resourceTelemetry.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
+  ReadAloudError,
+  ReadAloudSynthesizeInput,
+  ReadAloudSynthesizeResult,
+} from "./readAloud.ts";
+import {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
   SourceControlDiscoveryResult,
@@ -179,6 +184,7 @@ export const WS_METHODS = {
   // Filesystem methods
   filesystemBrowse: "filesystem.browse",
   assetsCreateUrl: "assets.createUrl",
+  readAloudSynthesize: "readAloud.synthesize",
 
   // VCS methods
   vcsPull: "vcs.pull",
@@ -481,6 +487,12 @@ export const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
   payload: AssetCreateUrlInput,
   success: AssetCreateUrlResult,
   error: Schema.Union([AssetAccessError, EnvironmentAuthorizationError]),
+});
+
+export const WsReadAloudSynthesizeRpc = Rpc.make(WS_METHODS.readAloudSynthesize, {
+  payload: ReadAloudSynthesizeInput,
+  success: ReadAloudSynthesizeResult,
+  error: Schema.Union([ReadAloudError, EnvironmentAuthorizationError]),
 });
 
 export const WsSubscribeVcsStatusRpc = Rpc.make(WS_METHODS.subscribeVcsStatus, {
@@ -817,6 +829,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,
+  WsReadAloudSynthesizeRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsPullRpc,
   WsVcsRefreshStatusRpc,

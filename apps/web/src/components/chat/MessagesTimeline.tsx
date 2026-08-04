@@ -38,6 +38,8 @@ import {
   resolveFileDiffPath,
 } from "../../lib/diffRendering";
 import ChatMarkdown from "../ChatMarkdown";
+import { ReadAloudSurface } from "./ReadAloudSurface";
+import { usePrimarySettings } from "../../hooks/useSettings";
 import {
   BotIcon,
   CheckIcon,
@@ -1018,17 +1020,27 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
+  const readAloudEngine = usePrimarySettings((settings) => settings.readAloud?.engine ?? "system");
+  const isStreaming = Boolean(row.message.streaming);
 
   return (
     <>
       <div className="relative min-w-0 px-1 py-0.5">
-        <ChatMarkdown
-          text={messageText}
-          cwd={ctx.markdownCwd}
-          threadRef={ctx.threadRef ?? undefined}
-          isStreaming={Boolean(row.message.streaming)}
-          skills={ctx.skills}
-        />
+        <ReadAloudSurface
+          messageKey={String(row.message.id)}
+          enabled={!isStreaming}
+          engine={readAloudEngine}
+          environmentId={ctx.activeThreadEnvironmentId}
+          isStreaming={isStreaming}
+        >
+          <ChatMarkdown
+            text={messageText}
+            cwd={ctx.markdownCwd}
+            threadRef={ctx.threadRef ?? undefined}
+            isStreaming={isStreaming}
+            skills={ctx.skills}
+          />
+        </ReadAloudSurface>
         <AssistantChangedFilesSection
           turnSummary={row.assistantTurnDiffSummary}
           routeThreadKey={ctx.routeThreadKey}

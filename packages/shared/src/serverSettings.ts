@@ -131,6 +131,7 @@ export function applyServerSettingsPatch(
     providerHealthRefreshInterval,
     backgroundActivityProfile,
     backgroundActivity,
+    readAloud: _readAloudPatch,
     ...patchForMerge
   } = patch;
   const currentBackgroundActivity = normalizeServerBackgroundActivitySettings(current);
@@ -169,8 +170,25 @@ export function applyServerSettingsPatch(
           }
         : undefined;
   const next = deepMerge(current, patchForMerge);
+  // Never persist apiKey or the computed apiKeyConfigured flag from a patch.
+  const nextReadAloud =
+    patch.readAloud !== undefined
+      ? (() => {
+          const { apiKey: _apiKey, ...readAloudPatch } = patch.readAloud;
+          const currentReadAloud = current.readAloud ?? {
+            engine: "system" as const,
+            apiKeyConfigured: false,
+          };
+          return {
+            ...currentReadAloud,
+            ...readAloudPatch,
+            apiKeyConfigured: currentReadAloud.apiKeyConfigured,
+          };
+        })()
+      : undefined;
   const nextWithReplacementsBase = {
     ...next,
+    ...(nextReadAloud !== undefined ? { readAloud: nextReadAloud } : {}),
     ...(backgroundActivity !== undefined
       ? {
           backgroundActivity: {

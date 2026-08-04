@@ -725,6 +725,14 @@ export function createServerEnvironmentAtoms<R, E>(
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),
+    readAloudSynthesize: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:read-aloud-synthesize",
+      tag: WS_METHODS.readAloudSynthesize,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => `${environmentId}:${input.text}`,
+      },
+    }),
     signalProcess: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:signal-process",
       tag: WS_METHODS.serverSignalProcess,
