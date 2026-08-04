@@ -28,6 +28,9 @@
   --ctp-text: #cdd6f4;
   --ctp-subtext0: #a6adc8;
   --ctp-subtext1: #bac2de;
+  /* One step above base — the composer and message cards lift off the body
+     without jumping to the much lighter surface0. */
+  --ctp-raised: #252537;
   --ctp-mauve: #cba6f7;
   --ctp-lavender: #b4befe;
   --ctp-blue: #89b4fa;
@@ -37,12 +40,18 @@
 
   color-scheme: dark;
 
+  /*
+   * Depth order, darkest to lightest: sidebar (crust) → chat body (base) →
+   * raised surfaces such as the composer and message cards → popovers.
+   * The chat is where the eye lives, so it sits above the sidebar rather
+   * than below it.
+   */
   --background: var(--ctp-base);
   --app-chrome-background: var(--ctp-base);
   --foreground: var(--ctp-text);
-  --surface-raised: var(--ctp-surface0);
+  --surface-raised: var(--ctp-raised);
 
-  --card: var(--ctp-mantle);
+  --card: var(--ctp-raised);
   --card-foreground: var(--ctp-text);
   --popover: var(--ctp-surface0);
   --popover-foreground: var(--ctp-text);
@@ -70,15 +79,15 @@
   --warning: var(--ctp-yellow);
   --warning-foreground: var(--ctp-yellow);
 
-  --sidebar: var(--ctp-mantle);
+  --sidebar: var(--ctp-crust);
   --sidebar-foreground: var(--ctp-text);
   --sidebar-muted-foreground: var(--ctp-subtext0);
-  --sidebar-control-surface: var(--ctp-surface0);
-  --sidebar-row-hover: color-mix(in srgb, var(--ctp-surface0) 70%, transparent);
-  --sidebar-row-active: var(--ctp-surface0);
-  --sidebar-row-selected: var(--ctp-surface1);
-  --sidebar-border: color-mix(in srgb, var(--ctp-surface1) 70%, transparent);
-  --sidebar-stage-fade: var(--ctp-mantle);
+  --sidebar-control-surface: var(--ctp-mantle);
+  --sidebar-row-hover: color-mix(in srgb, var(--ctp-surface0) 55%, transparent);
+  --sidebar-row-active: color-mix(in srgb, var(--ctp-surface0) 80%, transparent);
+  --sidebar-row-selected: var(--ctp-surface0);
+  --sidebar-border: color-mix(in srgb, var(--ctp-surface1) 60%, transparent);
+  --sidebar-stage-fade: var(--ctp-crust);
 
   --app-scrollbar-thumb: color-mix(in srgb, var(--ctp-overlay0) 55%, transparent);
   --app-scrollbar-thumb-hover: var(--ctp-overlay0);
@@ -91,25 +100,27 @@
  */
 .dark [data-sidebar-version="v1"],
 .dark [data-sidebar-version="v2"] {
-  --background: var(--ctp-base);
+  /* Scoped to the sidebar element itself, so these tokens describe the
+     sidebar's interior, not the workspace. */
+  --background: var(--ctp-crust);
   --foreground: var(--ctp-text);
-  --card: var(--ctp-mantle);
+  --card: var(--ctp-crust);
   --card-foreground: var(--ctp-text);
-  --accent: var(--ctp-surface1);
+  --accent: var(--ctp-surface0);
   --accent-foreground: var(--ctp-text);
-  --muted: var(--ctp-surface0);
+  --muted: var(--ctp-mantle);
   --muted-foreground: var(--ctp-subtext0);
-  --border: color-mix(in srgb, var(--ctp-surface1) 70%, transparent);
+  --border: color-mix(in srgb, var(--ctp-surface1) 60%, transparent);
   --input: var(--ctp-surface2);
-  --sidebar: var(--ctp-mantle);
+  --sidebar: var(--ctp-crust);
   --sidebar-foreground: var(--ctp-text);
   --sidebar-muted-foreground: var(--ctp-subtext0);
-  --sidebar-control-surface: var(--ctp-surface0);
-  --sidebar-row-hover: color-mix(in srgb, var(--ctp-surface0) 70%, transparent);
-  --sidebar-row-active: var(--ctp-surface0);
-  --sidebar-row-selected: var(--ctp-surface1);
-  --sidebar-border: color-mix(in srgb, var(--ctp-surface1) 70%, transparent);
-  --sidebar-stage-fade: var(--ctp-mantle);
+  --sidebar-control-surface: var(--ctp-mantle);
+  --sidebar-row-hover: color-mix(in srgb, var(--ctp-surface0) 55%, transparent);
+  --sidebar-row-active: color-mix(in srgb, var(--ctp-surface0) 80%, transparent);
+  --sidebar-row-selected: var(--ctp-surface0);
+  --sidebar-border: color-mix(in srgb, var(--ctp-surface1) 60%, transparent);
+  --sidebar-stage-fade: var(--ctp-crust);
 }
 
 /* Read-aloud karaoke: lavender sentence wash, mauve on the spoken word. */
