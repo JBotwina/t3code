@@ -1031,7 +1031,6 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           enabled={!isStreaming}
           engine={readAloudEngine}
           environmentId={ctx.activeThreadEnvironmentId}
-          isStreaming={isStreaming}
         >
           <ChatMarkdown
             text={messageText}

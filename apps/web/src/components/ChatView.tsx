@@ -226,6 +226,7 @@ import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
+import { ReadAloudMiniPlayer } from "./chat/ReadAloudMiniPlayer";
 import { ChatHeader } from "./chat/ChatHeader";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
@@ -5856,6 +5857,15 @@ function ChatViewContent(props: ChatViewProps) {
                   </button>
                 </div>
               )}
+            </div>
+
+            {/* Read-aloud transport — chat-column stacking context so it paints above the composer glass */}
+            <div
+              className="pointer-events-none absolute inset-x-0 z-40 flex items-end justify-center gap-2 px-3 py-1.5"
+              style={{ bottom: composerOverlayHeight + 4 }}
+              data-read-aloud-player-dock=""
+            >
+              <ReadAloudMiniPlayer />
             </div>
 
             {/* Input bar — centered hero while a draft has no messages, docked at the bottom otherwise */}

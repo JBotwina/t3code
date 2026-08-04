@@ -6,27 +6,30 @@ import {
   type ReactNode,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import type { EnvironmentId, ReadAloudEngine, ReadAloudWordTiming } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
+import type { EnvironmentId, ReadAloudEngine } from "@t3tools/contracts";
 
 import {
   playElevenLabsAudio,
   playWebSpeech,
   type PlaybackHandle,
 } from "../../lib/readAloud/audioPlayback";
+import {
+  getCachedAudio,
+  hasCachedAudio,
+  readAloudController,
+  setCachedAudio,
+  type ReadAloudStatus,
+} from "../../lib/readAloud/controller";
 import { rangeFromTextOffsets, textOffsetFromPoint } from "../../lib/readAloud/domRanges";
-import { sentenceIndexAt, splitSentences, type SentenceSpan } from "../../lib/readAloud/sentences";
+import {
+  collectSentenceSpans,
+  sentenceIndexAt,
+  type SentenceSpan,
+} from "../../lib/readAloud/sentences";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { toastManager } from "../ui/toast";
-
-type ActivePlayback = {
-  readonly messageKey: string;
-  readonly sentenceIndex: number;
-  readonly sentence: SentenceSpan;
-  readonly words: readonly ReadAloudWordTiming[];
-  readonly handle: PlaybackHandle;
-  readonly fullText: string;
-};
 
 const HOVER_HIGHLIGHT = "read-aloud-hover";
 const WORD_HIGHLIGHT = "read-aloud-word";
@@ -50,89 +53,66 @@ function setHighlight(name: string, range: Range | null) {
   CSS.highlights.set(name, new HighlightCtor(range));
 }
 
+/** Same-length whitespace normalization so TTS char offsets still map back. */
+function speakableText(text: string): string {
+  return text.replace(/\s/g, " ");
+}
+
 export function ReadAloudSurface({
   messageKey,
   enabled,
   engine,
   environmentId,
-  isStreaming,
   children,
 }: {
   readonly messageKey: string;
   readonly enabled: boolean;
   readonly engine: ReadAloudEngine;
   readonly environmentId: EnvironmentId | null;
-  readonly isStreaming: boolean;
   readonly children: ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const spansRef = useRef<SentenceSpan[]>([]);
-  const fullTextRef = useRef("");
-  const playbackRef = useRef<ActivePlayback | null>(null);
+  const handleRef = useRef<PlaybackHandle | null>(null);
+  const playingIndexRef = useRef<number | null>(null);
+  // Invalidates in-flight synthesize/decode when a newer play request lands.
+  const playGenerationRef = useRef(0);
   const [activeSentence, setActiveSentence] = useState<number | null>(null);
   const [wordRange, setWordRange] = useState<{ start: number; end: number } | null>(null);
-  const sessionCacheRef = useRef(
-    new Map<
-      string,
-      { audioBase64: string; mimeType: string; words: readonly ReadAloudWordTiming[] }
-    >(),
-  );
 
   const synthesize = useAtomCommand(serverEnvironment.readAloudSynthesize, "read aloud synthesize");
 
   const recomputeSpans = useCallback(() => {
     const root = rootRef.current;
     if (!root) return;
-    const text = root.innerText.replace(/\u00a0/g, " ");
-    fullTextRef.current = text;
-    spansRef.current = splitSentences(text);
+    spansRef.current = collectSentenceSpans(root);
   }, []);
 
-  useEffect(() => {
-    recomputeSpans();
-  });
+  const publish = useCallback(
+    (status: ReadAloudStatus, sentenceIndex: number) => {
+      const span = spansRef.current[sentenceIndex];
+      readAloudController.publish({
+        status,
+        messageKey,
+        sentenceIndex,
+        sentenceCount: spansRef.current.length,
+        sentenceText: span?.text ?? "",
+      });
+    },
+    [messageKey],
+  );
 
-  const stopPlayback = useCallback(() => {
-    playbackRef.current?.handle.stop();
-    playbackRef.current = null;
+  const halt = useCallback(() => {
+    playGenerationRef.current += 1;
+    handleRef.current?.stop();
+    handleRef.current = null;
+    playingIndexRef.current = null;
     setActiveSentence(null);
     setWordRange(null);
     clearHighlight(WORD_HIGHLIGHT);
     clearHighlight(ACTIVE_HIGHLIGHT);
-  }, []);
-
-  // Escape / Space global when this surface has active playback or focus in chat
-  useEffect(() => {
-    if (!enabled || isStreaming) return;
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable ||
-          target.closest("[data-composer], [data-slot='composer']"))
-      ) {
-        return;
-      }
-      if (event.key === "Escape") {
-        if (playbackRef.current) {
-          event.preventDefault();
-          stopPlayback();
-        }
-        return;
-      }
-      if (event.key === " " || event.code === "Space") {
-        const active = playbackRef.current;
-        if (!active || active.messageKey !== messageKey) return;
-        event.preventDefault();
-        if (active.handle.isPaused()) active.handle.resume();
-        else active.handle.pause();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [enabled, isStreaming, messageKey, stopPlayback]);
+    readAloudController.release(messageKey);
+  }, [messageKey]);
 
   // Paint active + word highlights
   useEffect(() => {
@@ -162,42 +142,68 @@ export function ReadAloudSurface({
       recomputeSpans();
       const spans = spansRef.current;
       const sentence = spans[sentenceIndex];
-      if (!sentence) return;
-
-      // Toggle pause if same sentence
-      const current = playbackRef.current;
-      if (current && current.messageKey === messageKey && current.sentenceIndex === sentenceIndex) {
-        if (current.handle.isPaused()) current.handle.resume();
-        else current.handle.pause();
+      if (!sentence) {
+        halt();
         return;
       }
 
-      stopPlayback();
+      // Clicking the sentence that is already playing toggles pause.
+      if (handleRef.current && playingIndexRef.current === sentenceIndex) {
+        const handle = handleRef.current;
+        if (handle.isPaused()) {
+          handle.resume();
+          publish("playing", sentenceIndex);
+        } else {
+          handle.pause();
+          publish("paused", sentenceIndex);
+        }
+        return;
+      }
+
+      playGenerationRef.current += 1;
+      const generation = playGenerationRef.current;
+      handleRef.current?.stop();
+      handleRef.current = null;
+      playingIndexRef.current = null;
+      setWordRange(null);
       setActiveSentence(sentenceIndex);
 
-      const speakText = sentence.text;
+      readAloudController.claim({
+        messageKey,
+        playSentence: (index) => void playSentence(index),
+        pause: () => {
+          handleRef.current?.pause();
+          if (playingIndexRef.current !== null) publish("paused", playingIndexRef.current);
+        },
+        resume: () => {
+          handleRef.current?.resume();
+          if (playingIndexRef.current !== null) publish("playing", playingIndexRef.current);
+        },
+        halt,
+      });
+
+      const speakText = speakableText(sentence.text);
       const cacheKey = `${engine}:${speakText}`;
 
       const onWord = (tick: { charStart: number; charEnd: number } | null) => {
-        if (!tick) {
-          setWordRange(null);
-          return;
-        }
-        setWordRange({ start: tick.charStart, end: tick.charEnd });
+        if (playGenerationRef.current !== generation) return;
+        setWordRange(tick ? { start: tick.charStart, end: tick.charEnd } : null);
       };
 
       const playNext = () => {
+        if (playGenerationRef.current !== generation) return;
         const next = sentenceIndex + 1;
         if (next < spansRef.current.length) {
           void playSentence(next);
         } else {
-          stopPlayback();
+          halt();
         }
       };
 
       const onError = (message: string) => {
+        if (playGenerationRef.current !== generation) return;
         toastManager.add({ type: "error", title: message });
-        stopPlayback();
+        halt();
       };
 
       try {
@@ -208,42 +214,50 @@ export function ReadAloudSurface({
             onEnded: playNext,
             onError,
           });
-          playbackRef.current = {
-            messageKey,
-            sentenceIndex,
-            sentence,
-            words: [],
-            handle,
-            fullText: speakText,
-          };
+          handleRef.current = handle;
+          playingIndexRef.current = sentenceIndex;
+          publish("playing", sentenceIndex);
           return;
         }
 
-        let cached = sessionCacheRef.current.get(cacheKey);
+        publish("loading", sentenceIndex);
+
+        let cached = getCachedAudio(cacheKey);
         if (!cached) {
           const result = await synthesize({
             environmentId,
             input: { text: speakText },
           });
           if (result._tag !== "Success") {
-            throw new Error("Could not synthesize speech");
+            const failure = result._tag === "Failure" ? Cause.squash(result.cause) : null;
+            const tag =
+              failure && typeof failure === "object" && "_tag" in failure
+                ? String((failure as { _tag: unknown })._tag)
+                : null;
+            if (tag === "ReadAloudApiKeyMissingError") {
+              throw new ReadAloudApiKeyMissing();
+            }
+            const detail =
+              failure instanceof Error && failure.message ? failure.message : undefined;
+            throw new Error(detail ?? "Could not synthesize speech");
           }
           cached = {
             audioBase64: result.value.audioBase64,
             mimeType: result.value.mimeType,
             words: result.value.words,
           };
-          sessionCacheRef.current.set(cacheKey, cached);
+          setCachedAudio(cacheKey, cached);
         }
 
         // Prefetch next sentence (fire and forget)
         const nextSpan = spans[sentenceIndex + 1];
-        if (nextSpan && environmentId) {
-          const nextKey = `${engine}:${nextSpan.text}`;
-          if (!sessionCacheRef.current.has(nextKey)) {
-            void synthesize({ environmentId, input: { text: nextSpan.text } }).then((result) => {
+        if (nextSpan) {
+          const nextText = speakableText(nextSpan.text);
+          const nextKey = `${engine}:${nextText}`;
+          if (!hasCachedAudio(nextKey)) {
+            void synthesize({ environmentId, input: { text: nextText } }).then((result) => {
               if (result._tag !== "Success") return;
-              sessionCacheRef.current.set(nextKey, {
+              setCachedAudio(nextKey, {
                 audioBase64: result.value.audioBase64,
                 mimeType: result.value.mimeType,
                 words: result.value.words,
@@ -259,35 +273,40 @@ export function ReadAloudSurface({
           onEnded: playNext,
           onError,
         });
-        playbackRef.current = {
-          messageKey,
-          sentenceIndex,
-          sentence,
-          words: cached.words,
-          handle,
-          fullText: speakText,
-        };
+        if (playGenerationRef.current !== generation) {
+          handle.stop();
+          return;
+        }
+        handleRef.current = handle;
+        playingIndexRef.current = sentenceIndex;
+        publish("playing", sentenceIndex);
       } catch (error) {
-        const message =
-          error && typeof error === "object" && "message" in error
-            ? String((error as { message: unknown }).message)
-            : "Read aloud failed";
-        if (message.includes("API key") || message.includes("ApiKey")) {
+        if (playGenerationRef.current !== generation) return;
+        if (error instanceof ReadAloudApiKeyMissing) {
           toastManager.add({
             type: "error",
             title: "Configure an ElevenLabs API key in Settings → General → Read aloud",
           });
         } else {
+          const message =
+            error && typeof error === "object" && "message" in error
+              ? String((error as { message: unknown }).message)
+              : "Read aloud failed";
           toastManager.add({ type: "error", title: message });
         }
-        stopPlayback();
+        halt();
       }
     },
-    [engine, environmentId, messageKey, recomputeSpans, stopPlayback, synthesize],
+    [engine, environmentId, halt, messageKey, publish, recomputeSpans, synthesize],
   );
 
+  const onMouseEnter = () => {
+    if (!enabled) return;
+    recomputeSpans();
+  };
+
   const onMouseMove = (event: ReactMouseEvent) => {
-    if (!enabled || isStreaming) return;
+    if (!enabled) return;
     const root = rootRef.current;
     if (!root) return;
     const offset = textOffsetFromPoint(root, event.clientX, event.clientY);
@@ -314,30 +333,44 @@ export function ReadAloudSurface({
   };
 
   const onClick = (event: ReactMouseEvent) => {
-    if (!enabled || isStreaming) return;
+    if (!enabled) return;
     // Don't steal link/code clicks
     const target = event.target;
     if (target instanceof HTMLElement) {
       if (target.closest("a, button, input, textarea, pre, code")) return;
     }
+    // Don't hijack text selection (click fires after a select-drag).
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) return;
     const root = rootRef.current;
     if (!root) return;
     const offset = textOffsetFromPoint(root, event.clientX, event.clientY);
     if (offset === null) return;
+    recomputeSpans();
     const idx = sentenceIndexAt(spansRef.current, offset);
     event.preventDefault();
     void playSentence(idx);
   };
 
-  // Invalidate session cache when engine changes
+  // Stop playback when the engine changes mid-read (the closure chain would
+  // otherwise keep speaking with the old engine).
+  const enginesSeen = useRef(engine);
   useEffect(() => {
-    sessionCacheRef.current.clear();
-    stopPlayback();
-  }, [engine, stopPlayback]);
+    if (enginesSeen.current !== engine) {
+      enginesSeen.current = engine;
+      halt();
+    }
+  }, [engine, halt]);
 
-  useEffect(() => () => stopPlayback(), [stopPlayback]);
+  useEffect(
+    () => () => {
+      halt();
+      clearHighlight(HOVER_HIGHLIGHT);
+    },
+    [halt],
+  );
 
-  if (!enabled || isStreaming) {
+  if (!enabled) {
     return <>{children}</>;
   }
 
@@ -346,6 +379,7 @@ export function ReadAloudSurface({
       ref={rootRef}
       className="read-aloud-surface"
       data-read-aloud=""
+      onMouseEnter={onMouseEnter}
       onMouseMove={onMouseMove}
       onMouseLeave={onMouseLeave}
       onClick={onClick}
@@ -353,4 +387,10 @@ export function ReadAloudSurface({
       {children}
     </div>
   );
+}
+
+class ReadAloudApiKeyMissing extends Error {
+  constructor() {
+    super("ElevenLabs API key is not configured.");
+  }
 }

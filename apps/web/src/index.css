@@ -1180,7 +1180,7 @@ label:has(> select#reasoning-effort) select {
 
 /* Read-aloud karaoke highlights (CSS Custom Highlight API) */
 ::highlight(read-aloud-hover) {
-  background-color: color-mix(in oklab, #818cf8 28%, transparent);
+  background-color: color-mix(in oklab, #818cf8 14%, transparent);
 }
 ::highlight(read-aloud-active) {
   background-color: color-mix(in oklab, #818cf8 28%, transparent);
