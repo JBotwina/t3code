@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -21,7 +22,8 @@ import {
   setCachedAudio,
   type ReadAloudStatus,
 } from "../../lib/readAloud/controller";
-import { rangeFromTextOffsets, textOffsetFromPoint } from "../../lib/readAloud/domRanges";
+import { textOffsetFromPoint } from "../../lib/readAloud/domRanges";
+import { highlightRects, type HighlightRect } from "../../lib/readAloud/highlightRects";
 import {
   collectSentenceSpans,
   sentenceIndexAt,
@@ -31,26 +33,39 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { toastManager } from "../ui/toast";
 
-const HOVER_HIGHLIGHT = "read-aloud-hover";
-const WORD_HIGHLIGHT = "read-aloud-word";
-const ACTIVE_HIGHLIGHT = "read-aloud-active";
+/** Grown past the glyph box so the rounded band reads as a pill, not a tight box. */
+const SENTENCE_INFLATE_X = 3;
+const SENTENCE_INFLATE_Y = 2;
+const WORD_INFLATE_X = 4;
+const WORD_INFLATE_Y = 3;
 
-function clearHighlight(name: string) {
-  if (typeof CSS !== "undefined" && "highlights" in CSS) {
-    CSS.highlights.delete(name);
-  }
-}
+type HighlightLayers = {
+  readonly hover: readonly HighlightRect[];
+  readonly active: readonly HighlightRect[];
+  readonly word: readonly HighlightRect[];
+};
 
-function setHighlight(name: string, range: Range | null) {
-  if (typeof CSS === "undefined" || !("highlights" in CSS)) return;
-  if (!range) {
-    CSS.highlights.delete(name);
-    return;
-  }
-  // Highlight is a global in browsers that support CSS Custom Highlight API.
-  const HighlightCtor = (globalThis as unknown as { Highlight: typeof Highlight }).Highlight;
-  if (typeof HighlightCtor !== "function") return;
-  CSS.highlights.set(name, new HighlightCtor(range));
+const NO_HIGHLIGHTS: HighlightLayers = { hover: [], active: [], word: [] };
+
+function HighlightBand({
+  className,
+  rects,
+}: {
+  readonly className: string;
+  readonly rects: readonly HighlightRect[];
+}) {
+  return (
+    <>
+      {rects.map((rect) => (
+        // One band per visual line, so its position is already a unique key.
+        <div
+          key={`${rect.top}:${rect.left}:${rect.width}`}
+          className={className}
+          style={{ top: rect.top, left: rect.left, width: rect.width, height: rect.height }}
+        />
+      ))}
+    </>
+  );
 }
 
 /** Same-length whitespace normalization so TTS char offsets still map back. */
@@ -79,6 +94,10 @@ export function ReadAloudSurface({
   const playGenerationRef = useRef(0);
   const [activeSentence, setActiveSentence] = useState<number | null>(null);
   const [wordRange, setWordRange] = useState<{ start: number; end: number } | null>(null);
+  const [hoverSentence, setHoverSentence] = useState<number | null>(null);
+  const [highlights, setHighlights] = useState<HighlightLayers>(NO_HIGHLIGHTS);
+  // Bumped whenever the surface reflows, so the measured rects are re-taken.
+  const [layoutEpoch, setLayoutEpoch] = useState(0);
 
   const synthesize = useAtomCommand(serverEnvironment.readAloudSynthesize, "read aloud synthesize");
 
@@ -109,31 +128,49 @@ export function ReadAloudSurface({
     playingIndexRef.current = null;
     setActiveSentence(null);
     setWordRange(null);
-    clearHighlight(WORD_HIGHLIGHT);
-    clearHighlight(ACTIVE_HIGHLIGHT);
     readAloudController.release(messageKey);
   }, [messageKey]);
 
-  // Paint active + word highlights
+  // Measure the hover, sentence and word bands. Layout effect so the rects land
+  // in the same paint as the state change that caused them.
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const active = activeSentence === null ? undefined : spansRef.current[activeSentence];
+    // The active band owns its own sentence; painting hover under it too would
+    // just darken the sentence whenever the pointer rests on what is playing.
+    const hover =
+      hoverSentence === activeSentence ? undefined : spansRef.current[hoverSentence ?? -1];
+    setHighlights({
+      hover: hover
+        ? highlightRects(root, hover.start, hover.end, SENTENCE_INFLATE_X, SENTENCE_INFLATE_Y)
+        : [],
+      active: active
+        ? highlightRects(root, active.start, active.end, SENTENCE_INFLATE_X, SENTENCE_INFLATE_Y)
+        : [],
+      word:
+        active && wordRange
+          ? // Word offsets from TTS are relative to the sentence text.
+            highlightRects(
+              root,
+              active.start + wordRange.start,
+              active.start + wordRange.end,
+              WORD_INFLATE_X,
+              WORD_INFLATE_Y,
+            )
+          : [],
+    });
+  }, [activeSentence, hoverSentence, wordRange, layoutEpoch]);
+
+  // Wrapping changes with the panel width, and every measured rect goes stale
+  // with it.
   useEffect(() => {
     const root = rootRef.current;
-    if (!root || activeSentence === null) {
-      clearHighlight(ACTIVE_HIGHLIGHT);
-      clearHighlight(WORD_HIGHLIGHT);
-      return;
-    }
-    const span = spansRef.current[activeSentence];
-    if (!span) return;
-    setHighlight(ACTIVE_HIGHLIGHT, rangeFromTextOffsets(root, span.start, span.end));
-    if (wordRange) {
-      // word offsets from TTS are relative to the sentence text
-      const absStart = span.start + wordRange.start;
-      const absEnd = span.start + wordRange.end;
-      setHighlight(WORD_HIGHLIGHT, rangeFromTextOffsets(root, absStart, absEnd));
-    } else {
-      clearHighlight(WORD_HIGHLIGHT);
-    }
-  }, [activeSentence, wordRange]);
+    if (!root || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setLayoutEpoch((epoch) => epoch + 1));
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, []);
 
   const playSentence = useCallback(
     async (sentenceIndex: number) => {
@@ -315,25 +352,17 @@ export function ReadAloudSurface({
     if (!root) return;
     const offset = textOffsetFromPoint(root, event.clientX, event.clientY);
     if (offset === null) {
-      clearHighlight(HOVER_HIGHLIGHT);
+      setHoverSentence(null);
       return;
     }
     const idx = sentenceIndexAt(spansRef.current, offset);
-    const span = spansRef.current[idx];
-    if (!span) {
-      clearHighlight(HOVER_HIGHLIGHT);
-      return;
-    }
-    // Don't paint hover over the active sentence (active highlight owns it)
-    if (activeSentence === idx) {
-      clearHighlight(HOVER_HIGHLIGHT);
-      return;
-    }
-    setHighlight(HOVER_HIGHLIGHT, rangeFromTextOffsets(root, span.start, span.end));
+    // Every pointer move lands here, so only re-measure when the sentence under
+    // the cursor actually changes.
+    setHoverSentence(spansRef.current[idx] ? idx : null);
   };
 
   const onMouseLeave = () => {
-    clearHighlight(HOVER_HIGHLIGHT);
+    setHoverSentence(null);
   };
 
   const onClick = (event: ReactMouseEvent) => {
@@ -366,13 +395,7 @@ export function ReadAloudSurface({
     }
   }, [engine, halt]);
 
-  useEffect(
-    () => () => {
-      halt();
-      clearHighlight(HOVER_HIGHLIGHT);
-    },
-    [halt],
-  );
+  useEffect(() => () => halt(), [halt]);
 
   if (!enabled) {
     return <>{children}</>;
@@ -388,7 +411,18 @@ export function ReadAloudSurface({
       onMouseLeave={onMouseLeave}
       onClick={onClick}
     >
-      {children}
+      <div className="read-aloud-highlight-layer" aria-hidden="true">
+        <HighlightBand className="read-aloud-band read-aloud-band-hover" rects={highlights.hover} />
+        <HighlightBand
+          className="read-aloud-band read-aloud-band-active"
+          rects={highlights.active}
+        />
+        <HighlightBand className="read-aloud-band read-aloud-band-word" rects={highlights.word} />
+      </div>
+      {/* Positioned, and after the layer in DOM order, so the text paints over
+          the bands without needing a z-index that would trap popovers inside a
+          new stacking context. */}
+      <div className="read-aloud-content">{children}</div>
     </div>
   );
 }

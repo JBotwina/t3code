@@ -1178,19 +1178,33 @@ label:has(> select#reasoning-effort) select {
   height: 100%;
 }
 
-/* Read-aloud karaoke highlights (CSS Custom Highlight API) */
-::highlight(read-aloud-hover) {
-  background-color: color-mix(in oklab, #818cf8 14%, transparent);
-}
-::highlight(read-aloud-active) {
-  background-color: color-mix(in oklab, #818cf8 28%, transparent);
-}
-::highlight(read-aloud-word) {
-  background-color: color-mix(in oklab, #4f46e5 55%, transparent);
-  color: #e0e7ff;
-}
+/* Read-aloud karaoke highlights. Painted as measured boxes rather than with the
+   Custom Highlight API, which ignores border-radius. */
 .read-aloud-surface {
   cursor: text;
+  position: relative;
+}
+.read-aloud-highlight-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.read-aloud-content {
+  position: relative;
+}
+.read-aloud-band {
+  position: absolute;
+  border-radius: 0.375rem;
+  transition: opacity 120ms ease-out;
+}
+.read-aloud-band-hover {
+  background-color: color-mix(in oklab, #a5b4fc 16%, transparent);
+}
+.read-aloud-band-active {
+  background-color: color-mix(in oklab, #a5b4fc 26%, transparent);
+}
+.read-aloud-band-word {
+  background-color: color-mix(in oklab, #6366f1 78%, transparent);
 }
 
 /* Chat markdown rendering */
