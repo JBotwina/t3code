@@ -270,6 +270,7 @@ export function ReadAloudSurface({
 
         const handle = await playElevenLabsAudio({
           audioBase64: cached.audioBase64,
+          mimeType: cached.mimeType,
           words: cached.words,
           rate: readAloudController.rate(),
           onWord,

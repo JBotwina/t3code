@@ -12,52 +12,64 @@ export type PlaybackHandle = {
   readonly stop: () => void;
   readonly isPaused: () => boolean;
   /**
-   * Change speed mid-sentence. Web Audio applies it immediately; Web Speech
-   * cannot re-rate a live utterance, so it takes effect on the next sentence.
+   * Change speed mid-sentence. The <audio> element applies it immediately and
+   * preserves pitch; Web Speech cannot re-rate a live utterance, so there it
+   * takes effect on the next sentence.
    */
   readonly setRate: (rate: number) => void;
 };
 
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
+function base64ToBlob(base64: string, mimeType: string): Blob {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
+  return new Blob([bytes], { type: mimeType });
 }
 
-/** Play ElevenLabs mp3 via Web Audio (avoids desktop CSP media-src blob block). */
+/**
+ * Play ElevenLabs audio through an <audio> element.
+ *
+ * Not Web Audio: `AudioBufferSourceNode.playbackRate` resamples, so speeding
+ * up raises the pitch into chipmunk territory. `HTMLMediaElement` time-stretches
+ * instead, holding pitch steady — which is the whole point of a speed control.
+ * The desktop CSP allows `media-src blob:` for exactly this.
+ *
+ * Position comes straight from `currentTime`, which is already in media time,
+ * so the word timings need no rate math at all.
+ */
 export async function playElevenLabsAudio(options: {
   readonly audioBase64: string;
+  readonly mimeType?: string;
   readonly words: readonly ReadAloudWordTiming[];
   readonly rate?: number;
   readonly onWord: (tick: WordTick | null) => void;
   readonly onEnded: () => void;
   readonly onError: (message: string) => void;
 }): Promise<PlaybackHandle> {
-  const ctx = new AudioContext();
-  let source: AudioBufferSourceNode | null = null;
-  // Media position (in the audio's own timeline) at the last (re)start, plus
-  // the wall clock reading then. Word timings are in media time, so playback
-  // rate only shows up here as a multiplier on elapsed wall time.
-  let mediaOffsetSec = 0;
-  let wallStartedAt = 0;
-  let rate = options.rate ?? 1;
-  let paused = false;
+  const url = URL.createObjectURL(
+    base64ToBlob(options.audioBase64, options.mimeType ?? "audio/mpeg"),
+  );
+  const element = new Audio(url);
+  // Chromium honours the standard property; older WebKit needs the prefix.
+  element.preservesPitch = true;
+  (element as HTMLAudioElement & { webkitPreservesPitch?: boolean }).webkitPreservesPitch = true;
+  element.playbackRate = options.rate ?? 1;
+
   let raf = 0;
   let stopped = false;
   let lastWord = -1;
-  // Stopping a source fires `onended`; without this, a pause or a rate change
-  // would look like the sentence finished and advance to the next one.
-  let sourceGeneration = 0;
 
-  const buffer = await ctx.decodeAudioData(base64ToArrayBuffer(options.audioBase64));
-
-  const mediaPositionSec = () =>
-    paused ? mediaOffsetSec : mediaOffsetSec + (ctx.currentTime - wallStartedAt) * rate;
+  const release = () => {
+    cancelAnimationFrame(raf);
+    element.pause();
+    element.removeAttribute("src");
+    element.load();
+    URL.revokeObjectURL(url);
+  };
 
   const tick = () => {
-    if (stopped || paused) return;
-    const elapsedMs = mediaPositionSec() * 1000;
+    if (stopped) return;
+    const elapsedMs = element.currentTime * 1000;
     let wordIndex = -1;
     for (let i = 0; i < options.words.length; i++) {
       const w = options.words[i]!;
@@ -79,69 +91,50 @@ export async function playElevenLabsAudio(options: {
     raf = requestAnimationFrame(tick);
   };
 
-  const stopSource = () => {
-    sourceGeneration += 1;
-    try {
-      source?.stop();
-    } catch {
-      // already stopped
-    }
-    source = null;
+  element.addEventListener("ended", () => {
+    if (stopped) return;
     cancelAnimationFrame(raf);
-  };
+    options.onWord(null);
+    options.onEnded();
+  });
+  element.addEventListener("error", () => {
+    if (stopped) return;
+    stopped = true;
+    release();
+    options.onError("Could not play synthesized speech");
+  });
 
-  const startFrom = (offsetSec: number) => {
-    sourceGeneration += 1;
-    const generation = sourceGeneration;
-    source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.playbackRate.value = rate;
-    source.connect(ctx.destination);
-    source.onended = () => {
-      if (stopped || paused || generation !== sourceGeneration) return;
-      cancelAnimationFrame(raf);
-      options.onWord(null);
-      options.onEnded();
-    };
-    mediaOffsetSec = offsetSec;
-    wallStartedAt = ctx.currentTime;
-    source.start(0, offsetSec);
-    raf = requestAnimationFrame(tick);
-  };
-
-  startFrom(0);
+  try {
+    await element.play();
+  } catch (cause) {
+    release();
+    throw cause instanceof Error ? cause : new Error("Could not start audio playback");
+  }
+  raf = requestAnimationFrame(tick);
 
   return {
     pause: () => {
-      if (stopped || paused || !source) return;
-      mediaOffsetSec = mediaPositionSec();
-      paused = true;
-      stopSource();
+      if (stopped || element.paused) return;
+      element.pause();
+      cancelAnimationFrame(raf);
     },
     resume: () => {
-      if (stopped || !paused) return;
-      paused = false;
-      startFrom(mediaOffsetSec);
+      if (stopped || !element.paused) return;
+      void element.play().catch(() => options.onError("Could not resume playback"));
+      raf = requestAnimationFrame(tick);
     },
     stop: () => {
+      if (stopped) return;
       stopped = true;
-      stopSource();
-      void ctx.close();
+      release();
       options.onWord(null);
     },
-    isPaused: () => paused,
+    isPaused: () => element.paused,
     setRate: (next: number) => {
-      if (stopped || next === rate) return;
-      if (paused || !source) {
-        rate = next;
-        return;
-      }
-      // Rebase onto the current position first, or the elapsed-time math would
-      // retroactively re-scale everything already played.
-      const position = mediaPositionSec();
-      rate = next;
-      stopSource();
-      startFrom(position);
+      if (stopped) return;
+      // currentTime is media time, so a rate change needs no rebasing — the
+      // highlight stays aligned on its own.
+      element.playbackRate = next;
     },
   };
 }

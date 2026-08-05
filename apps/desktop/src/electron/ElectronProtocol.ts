@@ -88,6 +88,9 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     `script-src ${scriptSources.join(" ")}`,
     `connect-src ${connectSources.join(" ")}`,
     `img-src 'self' ${input.scheme}: blob: data: http: https:`,
+    // Read-aloud plays synthesized speech from a blob URL through an <audio>
+    // element, which is what gives pitch-preserved playback above 1x.
+    "media-src 'self' blob:",
     "style-src 'self' 'unsafe-inline'",
     `font-src 'self' ${input.scheme}: data:`,
     "worker-src 'self' blob:",
