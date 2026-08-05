@@ -3777,9 +3777,11 @@ function ChatViewContent(props: ChatViewProps) {
       return;
     }
     // Opted out of live-follow entirely: the timeline never moves on its own.
-    // Positioning a freshly sent message is still allowed — that scroll is a
-    // direct result of the user pressing send.
-    if (!followTimelineLiveEdge && timelineScrollModeRef.current !== "anchoring-new-turn") {
+    // Positioning a freshly sent message still happens — but that scroll is
+    // issued by positionAnchor when the row mounts, not by this effect. Both
+    // branches below (revealing the streaming reply during anchoring, and
+    // sticking to the end) are live-follow, so skip them wholesale.
+    if (!followTimelineLiveEdge) {
       return;
     }
 
