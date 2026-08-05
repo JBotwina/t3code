@@ -14,24 +14,54 @@ export const READ_ALOUD_ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
  * ReadAloudSurface, so only the very first sentence pays it.
  */
 export const READ_ALOUD_ELEVENLABS_MODEL_ID = "eleven_turbo_v2_5";
-export const READ_ALOUD_API_KEY_SECRET_NAME = "tts-elevenlabs-api-key";
+export const READ_ALOUD_ELEVENLABS_API_KEY_SECRET_NAME = "tts-elevenlabs-api-key";
 
-export const ReadAloudEngine = Schema.Literals(["elevenlabs-flash", "system"]);
+export const READ_ALOUD_INWORLD_VOICE_ID = "Simon";
+/**
+ * 1.5-mini is the cheapest tier and holds up well; 1.5-max buys some quality
+ * for ~2x the per-character cost if a sentence ever reads flat.
+ */
+export const READ_ALOUD_INWORLD_MODEL_ID = "inworld-tts-1.5-mini";
+export const READ_ALOUD_INWORLD_API_KEY_SECRET_NAME = "tts-inworld-api-key";
+
+/** A hosted TTS vendor we hold an API key for. */
+export const ReadAloudProvider = Schema.Literals(["elevenlabs", "inworld"]);
+export type ReadAloudProvider = typeof ReadAloudProvider.Type;
+
+export const ReadAloudEngine = Schema.Literals(["elevenlabs-flash", "inworld", "system"]);
 export type ReadAloudEngine = typeof ReadAloudEngine.Type;
+
+/** null for engines synthesized on the client, which need no key. */
+export function readAloudProviderForEngine(engine: ReadAloudEngine): ReadAloudProvider | null {
+  switch (engine) {
+    case "elevenlabs-flash":
+      return "elevenlabs";
+    case "inworld":
+      return "inworld";
+    case "system":
+      return null;
+  }
+}
 
 export const ReadAloudSettings = Schema.Struct({
   engine: ReadAloudEngine.pipe(
     Schema.withDecodingDefault(Effect.succeed("system" as const satisfies ReadAloudEngine)),
   ),
   /** Client-visible only; never persisted. Injected when settings are read. */
-  apiKeyConfigured: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  elevenLabsApiKeyConfigured: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  /** Client-visible only; never persisted. Injected when settings are read. */
+  inworldApiKeyConfigured: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 });
 export type ReadAloudSettings = typeof ReadAloudSettings.Type;
 
 export const ReadAloudSettingsPatch = Schema.Struct({
   engine: Schema.optionalKey(ReadAloudEngine),
   /** Set a new key, or null/empty to clear. Never returned on read. */
-  apiKey: Schema.optionalKey(Schema.NullOr(TrimmedString)),
+  elevenLabsApiKey: Schema.optionalKey(Schema.NullOr(TrimmedString)),
+  /** Set a new key, or null/empty to clear. Never returned on read. */
+  inworldApiKey: Schema.optionalKey(Schema.NullOr(TrimmedString)),
 });
 export type ReadAloudSettingsPatch = typeof ReadAloudSettingsPatch.Type;
 
@@ -51,7 +81,7 @@ export type ReadAloudSynthesizeInput = typeof ReadAloudSynthesizeInput.Type;
 
 export const ReadAloudSynthesizeResult = Schema.Struct({
   engine: ReadAloudEngine,
-  /** Base64-encoded audio bytes (mp3 for ElevenLabs). Empty when engine is system. */
+  /** Base64-encoded audio bytes (mp3 for both hosted providers). Empty when engine is system. */
   audioBase64: Schema.String,
   mimeType: Schema.String,
   words: Schema.Array(ReadAloudWordTiming),
@@ -60,10 +90,14 @@ export type ReadAloudSynthesizeResult = typeof ReadAloudSynthesizeResult.Type;
 
 export class ReadAloudApiKeyMissingError extends Schema.TaggedErrorClass<ReadAloudApiKeyMissingError>()(
   "ReadAloudApiKeyMissingError",
-  {},
+  {
+    /** Optional so an older client can still decode this error. */
+    provider: Schema.optionalKey(ReadAloudProvider),
+  },
 ) {
   override get message(): string {
-    return "ElevenLabs API key is not configured.";
+    const label = this.provider === "inworld" ? "Inworld" : "ElevenLabs";
+    return `${label} API key is not configured.`;
   }
 }
 

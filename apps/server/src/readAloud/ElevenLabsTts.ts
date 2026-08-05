@@ -1,5 +1,4 @@
 import {
-  READ_ALOUD_API_KEY_SECRET_NAME,
   READ_ALOUD_ELEVENLABS_MODEL_ID,
   READ_ALOUD_ELEVENLABS_VOICE_ID,
   ReadAloudApiKeyMissingError,
@@ -9,11 +8,11 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
-import * as Option from "effect/Option";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as ReadAloudApiKeys from "./apiKeys.ts";
 
 type ElevenLabsAlignment = {
   readonly characters?: ReadonlyArray<string>;
@@ -61,57 +60,6 @@ function wordsFromAlignment(
   return words;
 }
 
-const utf8Decoder = new TextDecoder();
-
-export const hasElevenLabsApiKey: Effect.Effect<
-  boolean,
-  never,
-  ServerSecretStore.ServerSecretStore
-> = Effect.gen(function* () {
-  const fromEnv =
-    process.env.ELEVENLABS_API_KEY?.trim() || process.env.T3_ELEVENLABS_API_KEY?.trim();
-  if (fromEnv) return true;
-  const secretStore = yield* ServerSecretStore.ServerSecretStore;
-  const secret = yield* secretStore
-    .get(READ_ALOUD_API_KEY_SECRET_NAME)
-    .pipe(Effect.orElseSucceed(() => Option.none()));
-  return Option.isSome(secret);
-});
-
-export const setElevenLabsApiKey = (
-  apiKey: string | null,
-): Effect.Effect<void, never, ServerSecretStore.ServerSecretStore> =>
-  Effect.gen(function* () {
-    const secretStore = yield* ServerSecretStore.ServerSecretStore;
-    const trimmed = apiKey?.trim() ?? "";
-    if (!trimmed) {
-      yield* secretStore.remove(READ_ALOUD_API_KEY_SECRET_NAME).pipe(Effect.ignore);
-      return;
-    }
-    yield* secretStore
-      .set(READ_ALOUD_API_KEY_SECRET_NAME, new TextEncoder().encode(trimmed))
-      .pipe(Effect.orDie);
-  });
-
-const resolveElevenLabsApiKey: Effect.Effect<
-  string,
-  ReadAloudApiKeyMissingError,
-  ServerSecretStore.ServerSecretStore
-> = Effect.gen(function* () {
-  const fromEnv =
-    process.env.ELEVENLABS_API_KEY?.trim() || process.env.T3_ELEVENLABS_API_KEY?.trim();
-  if (fromEnv) return fromEnv;
-
-  const secretStore = yield* ServerSecretStore.ServerSecretStore;
-  const secret = yield* secretStore
-    .get(READ_ALOUD_API_KEY_SECRET_NAME)
-    .pipe(Effect.mapError(() => new ReadAloudApiKeyMissingError()));
-  if (Option.isNone(secret)) {
-    return yield* new ReadAloudApiKeyMissingError();
-  }
-  return utf8Decoder.decode(secret.value).trim();
-});
-
 export const synthesizeElevenLabs = (
   text: string,
 ): Effect.Effect<
@@ -120,7 +68,7 @@ export const synthesizeElevenLabs = (
   ServerSecretStore.ServerSecretStore | HttpClient.HttpClient
 > =>
   Effect.gen(function* () {
-    const apiKey = yield* resolveElevenLabsApiKey;
+    const apiKey = yield* ReadAloudApiKeys.resolveApiKey("elevenlabs");
     const httpClient = yield* HttpClient.HttpClient;
     const url = `https://api.elevenlabs.io/v1/text-to-speech/${READ_ALOUD_ELEVENLABS_VOICE_ID}/with-timestamps`;
 

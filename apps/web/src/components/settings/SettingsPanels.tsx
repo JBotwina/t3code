@@ -20,6 +20,7 @@ import {
   ProviderDriverKind,
   type ProviderInstanceConfig,
   type ProviderInstanceId,
+  type ReadAloudEngine,
   type ScopedThreadRef,
   type SidebarProjectGroupingMode,
 } from "@t3tools/contracts";
@@ -155,6 +156,18 @@ const THEME_OPTIONS = [
     label: "Dark",
   },
 ] as const;
+
+const READ_ALOUD_ENGINE_LABELS: Record<ReadAloudEngine, string> = {
+  system: "System",
+  "elevenlabs-flash": "ElevenLabs",
+  inworld: "Inworld",
+};
+
+const READ_ALOUD_ENGINE_ORDER = [
+  "system",
+  "elevenlabs-flash",
+  "inworld",
+] as const satisfies ReadonlyArray<ReadAloudEngine>;
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
   artwork: "Artwork",
@@ -1697,54 +1710,82 @@ export function GeneralSettingsPanel() {
             </div>
           }
         />
+      </SettingsSection>
 
+      <SettingsSection title="Text to speech">
         <SettingsRow
           {...searchableSetting("read-aloud-engine")}
-          description="How assistant responses are spoken. ElevenLabs gives karaoke word highlight; System uses the free macOS voice."
+          description="How assistant responses are spoken. ElevenLabs and Inworld both give karaoke word highlight; System uses the free macOS voice."
           control={
             <Select
               value={settings.readAloud?.engine ?? "system"}
               onValueChange={(value) => {
-                if (value !== "system" && value !== "elevenlabs-flash") return;
-                updateSettings({ readAloud: { engine: value } });
+                if (!READ_ALOUD_ENGINE_LABELS[value as ReadAloudEngine]) return;
+                updateSettings({ readAloud: { engine: value as ReadAloudEngine } });
               }}
             >
-              <SelectTrigger size="sm" className="w-48" aria-label="Read aloud engine">
+              <SelectTrigger size="sm" className="w-48" aria-label="Read aloud provider">
                 <SelectValue>
-                  {(settings.readAloud?.engine ?? "system") === "elevenlabs-flash"
-                    ? "ElevenLabs"
-                    : "System"}
+                  {READ_ALOUD_ENGINE_LABELS[settings.readAloud?.engine ?? "system"]}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="system">
-                  System
-                </SelectItem>
-                <SelectItem hideIndicator value="elevenlabs-flash">
-                  ElevenLabs
-                </SelectItem>
+                {READ_ALOUD_ENGINE_ORDER.map((engine) => (
+                  <SelectItem hideIndicator key={engine} value={engine}>
+                    {READ_ALOUD_ENGINE_LABELS[engine]}
+                  </SelectItem>
+                ))}
               </SelectPopup>
             </Select>
           }
         />
         <SettingsRow
-          {...searchableSetting("read-aloud-api-key")}
+          {...searchableSetting("read-aloud-elevenlabs-api-key")}
           description={
-            settings.readAloud?.apiKeyConfigured
+            settings.readAloud?.elevenLabsApiKeyConfigured
               ? "ElevenLabs API key is configured on this server."
-              : "Required for ElevenLabs Flash. Stored in the server secret store."
+              : "Required for the ElevenLabs provider. Stored in the server secret store."
           }
           control={
             <Input
               type="password"
               autoComplete="off"
-              placeholder={settings.readAloud?.apiKeyConfigured ? "••••••••" : "xi-api-key"}
+              placeholder={
+                settings.readAloud?.elevenLabsApiKeyConfigured ? "••••••••" : "xi-api-key"
+              }
               className="w-full sm:w-56"
               aria-label="ElevenLabs API key"
               onBlur={(event) => {
                 const value = event.currentTarget.value.trim();
                 if (!value) return;
-                updateSettings({ readAloud: { apiKey: value } });
+                updateSettings({ readAloud: { elevenLabsApiKey: value } });
+                event.currentTarget.value = "";
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                event.currentTarget.blur();
+              }}
+            />
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("read-aloud-inworld-api-key")}
+          description={
+            settings.readAloud?.inworldApiKeyConfigured
+              ? "Inworld API key is configured on this server."
+              : "Required for the Inworld provider. Stored in the server secret store."
+          }
+          control={
+            <Input
+              type="password"
+              autoComplete="off"
+              placeholder={settings.readAloud?.inworldApiKeyConfigured ? "••••••••" : "Basic key"}
+              className="w-full sm:w-56"
+              aria-label="Inworld API key"
+              onBlur={(event) => {
+                const value = event.currentTarget.value.trim();
+                if (!value) return;
+                updateSettings({ readAloud: { inworldApiKey: value } });
                 event.currentTarget.value = "";
               }}
               onKeyDown={(event) => {

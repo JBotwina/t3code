@@ -59,6 +59,8 @@ import {
   WsRpcGroup,
   ReadAloudProviderError,
   ReadAloudUnsupportedEngineError,
+  readAloudProviderForEngine,
+  type ServerSettings as ServerSettingsShape,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
@@ -90,7 +92,9 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
+import * as ReadAloudApiKeys from "./readAloud/apiKeys.ts";
 import * as ElevenLabsTts from "./readAloud/ElevenLabsTts.ts";
+import * as InworldTts from "./readAloud/InworldTts.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -979,12 +983,28 @@ const makeWsRpcLayer = (
           );
       };
 
+      /**
+       * API keys live in the secret store, not in settings, so every path that
+       * hands settings to a client has to re-derive which providers are usable.
+       */
+      const withReadAloudKeyStatus = (settings: ServerSettingsShape) =>
+        Effect.gen(function* () {
+          const elevenLabsApiKeyConfigured = yield* ReadAloudApiKeys.hasApiKey("elevenlabs");
+          const inworldApiKeyConfigured = yield* ReadAloudApiKeys.hasApiKey("inworld");
+          return ServerSettings.redactServerSettingsForClient({
+            ...settings,
+            readAloud: {
+              engine: settings.readAloud?.engine ?? "system",
+              elevenLabsApiKeyConfigured,
+              inworldApiKeyConfigured,
+            },
+          });
+        });
+
       const loadServerConfig = Effect.gen(function* () {
         const keybindingsConfig = yield* keybindings.loadConfigState;
         const providers = yield* providerRegistry.getProviders;
-        const settings = ServerSettings.redactServerSettingsForClient(
-          yield* serverSettings.getSettings,
-        );
+        const settings = yield* withReadAloudKeyStatus(yield* serverSettings.getSettings);
         const environment = yield* serverEnvironment.getDescriptor;
         const auth = yield* serverAuth.getDescriptor();
 
@@ -1454,14 +1474,7 @@ const makeWsRpcLayer = (
             WS_METHODS.serverGetSettings,
             Effect.gen(function* () {
               const settings = yield* serverSettings.getSettings;
-              const apiKeyConfigured = yield* ElevenLabsTts.hasElevenLabsApiKey;
-              return ServerSettings.redactServerSettingsForClient({
-                ...settings,
-                readAloud: {
-                  engine: settings.readAloud?.engine ?? "system",
-                  apiKeyConfigured,
-                },
-              });
+              return yield* withReadAloudKeyStatus(settings);
             }),
             {
               "rpc.aggregate": "server",
@@ -1471,18 +1484,17 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.serverUpdateSettings,
             Effect.gen(function* () {
-              if (patch.readAloud && "apiKey" in patch.readAloud) {
-                yield* ElevenLabsTts.setElevenLabsApiKey(patch.readAloud.apiKey ?? null);
+              if (patch.readAloud && "elevenLabsApiKey" in patch.readAloud) {
+                yield* ReadAloudApiKeys.setApiKey(
+                  "elevenlabs",
+                  patch.readAloud.elevenLabsApiKey ?? null,
+                );
+              }
+              if (patch.readAloud && "inworldApiKey" in patch.readAloud) {
+                yield* ReadAloudApiKeys.setApiKey("inworld", patch.readAloud.inworldApiKey ?? null);
               }
               const settings = yield* serverSettings.updateSettings(patch);
-              const apiKeyConfigured = yield* ElevenLabsTts.hasElevenLabsApiKey;
-              return ServerSettings.redactServerSettingsForClient({
-                ...settings,
-                readAloud: {
-                  engine: settings.readAloud?.engine ?? "system",
-                  apiKeyConfigured,
-                },
-              });
+              return yield* withReadAloudKeyStatus(settings);
             }),
             {
               "rpc.aggregate": "server",
@@ -1502,10 +1514,13 @@ const makeWsRpcLayer = (
                 ),
               );
               const engine = settings.readAloud?.engine ?? "system";
-              if (engine === "system") {
+              const provider = readAloudProviderForEngine(engine);
+              if (provider === null) {
                 return yield* new ReadAloudUnsupportedEngineError({ engine });
               }
-              return yield* ElevenLabsTts.synthesizeElevenLabs(input.text);
+              return provider === "inworld"
+                ? yield* InworldTts.synthesizeInworld(input.text)
+                : yield* ElevenLabsTts.synthesizeElevenLabs(input.text);
             }),
             {
               "rpc.aggregate": "server",
@@ -2051,7 +2066,7 @@ const makeWsRpcLayer = (
                 Stream.debounce(Duration.millis(PROVIDER_STATUS_DEBOUNCE_MS)),
               );
               const settingsUpdates = serverSettings.streamChanges.pipe(
-                Stream.map((settings) => ServerSettings.redactServerSettingsForClient(settings)),
+                Stream.mapEffect((settings) => withReadAloudKeyStatus(settings)),
                 Stream.map((settings) => ({
                   version: 1 as const,
                   type: "settingsUpdated" as const,

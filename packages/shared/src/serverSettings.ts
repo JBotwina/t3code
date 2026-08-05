@@ -170,19 +170,25 @@ export function applyServerSettingsPatch(
           }
         : undefined;
   const next = deepMerge(current, patchForMerge);
-  // Never persist apiKey or the computed apiKeyConfigured flag from a patch.
+  // Never persist raw API keys or the computed *Configured flags from a patch.
   const nextReadAloud =
     patch.readAloud !== undefined
       ? (() => {
-          const { apiKey: _apiKey, ...readAloudPatch } = patch.readAloud;
+          const {
+            elevenLabsApiKey: _elevenLabsApiKey,
+            inworldApiKey: _inworldApiKey,
+            ...readAloudPatch
+          } = patch.readAloud;
           const currentReadAloud = current.readAloud ?? {
             engine: "system" as const,
-            apiKeyConfigured: false,
+            elevenLabsApiKeyConfigured: false,
+            inworldApiKeyConfigured: false,
           };
           return {
             ...currentReadAloud,
             ...readAloudPatch,
-            apiKeyConfigured: currentReadAloud.apiKeyConfigured,
+            elevenLabsApiKeyConfigured: currentReadAloud.elevenLabsApiKeyConfigured,
+            inworldApiKeyConfigured: currentReadAloud.inworldApiKeyConfigured,
           };
         })()
       : undefined;

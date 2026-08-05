@@ -128,12 +128,17 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "read-aloud-engine",
-    title: "Read aloud engine",
+    title: "Text to speech provider",
     to: "/settings/general",
   },
   {
-    id: "read-aloud-api-key",
-    title: "Read aloud API key",
+    id: "read-aloud-elevenlabs-api-key",
+    title: "ElevenLabs API key",
+    to: "/settings/general",
+  },
+  {
+    id: "read-aloud-inworld-api-key",
+    title: "Inworld API key",
     to: "/settings/general",
   },
   {
