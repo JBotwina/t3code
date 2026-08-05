@@ -12,7 +12,7 @@ import {
   type ServerProvider,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
-  type ThreadId,
+  ThreadId,
   type TurnId,
   type KeybindingCommand,
   OrchestrationThreadActivity,
@@ -227,6 +227,9 @@ import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { ReadAloudMiniPlayer } from "./chat/ReadAloudMiniPlayer";
+import { SideChatPanel } from "./chat/SideChatPanel";
+import { SideChatSelectionAction } from "./chat/SideChatSelectionAction";
+import { useOpenSideChat } from "./chat/useSideChat";
 import { ChatHeader } from "./chat/ChatHeader";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
@@ -3510,6 +3513,12 @@ function ChatViewContent(props: ChatViewProps) {
   const showScrollDebouncer = useRef(
     new Debouncer(() => setShowScrollToBottom(true), { wait: 150 }),
   );
+  const timelineContainerRef = useRef<HTMLDivElement>(null);
+  const openSideChatForSelection = useOpenSideChat({
+    environmentId,
+    parentThread: activeServerThread,
+    projectId: activeProject?.id ?? null,
+  });
   const followTimelineLiveEdge = useClientSettings(
     (clientSettings) => clientSettings.followTimelineLiveEdge,
   );
@@ -5676,7 +5685,14 @@ function ChatViewContent(props: ChatViewProps) {
     </div>
   );
   const rightPanelContent = activeThreadRef ? (
-    activeRightPanelSurface?.kind === "preview" ? (
+    activeRightPanelSurface?.kind === "chat" ? (
+      <SideChatPanel
+        key={activeRightPanelSurface.resourceId}
+        environmentId={activeThreadRef.environmentId}
+        threadId={ThreadId.make(activeRightPanelSurface.resourceId)}
+        {...(gitCwd ? { markdownCwd: gitCwd } : {})}
+      />
+    ) : activeRightPanelSurface?.kind === "preview" ? (
       <Suspense fallback={null}>
         <PreviewPanel
           mode="embedded"
@@ -5817,7 +5833,7 @@ function ChatViewContent(props: ChatViewProps) {
               />
             </div>
             {/* Messages Wrapper */}
-            <div className="relative flex min-h-0 flex-1 flex-col">
+            <div className="relative flex min-h-0 flex-1 flex-col" ref={timelineContainerRef}>
               {/* Messages — LegendList handles virtualization and scrolling internally */}
               <MessagesTimeline
                 key={activeThread.id}
@@ -5853,6 +5869,12 @@ function ChatViewContent(props: ChatViewProps) {
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
                 hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
                 topFadeEnabled={!hasTimelineTopBanner}
+              />
+
+              <SideChatSelectionAction
+                containerRef={timelineContainerRef}
+                disabled={!isServerThread || activeProject === null}
+                onOpen={(selection) => void openSideChatForSelection(selection)}
               />
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
