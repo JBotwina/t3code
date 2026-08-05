@@ -3510,6 +3510,9 @@ function ChatViewContent(props: ChatViewProps) {
   const showScrollDebouncer = useRef(
     new Debouncer(() => setShowScrollToBottom(true), { wait: 150 }),
   );
+  const followTimelineLiveEdge = useClientSettings(
+    (clientSettings) => clientSettings.followTimelineLiveEdge,
+  );
   const timelineScrollModeRef = useRef<TimelineScrollMode>("following-end");
   const pendingTimelineAnchorRef = useRef<MessageId | null>(null);
   const positionedTimelineAnchorRef = useRef<MessageId | null>(null);
@@ -3731,8 +3734,14 @@ function ChatViewContent(props: ChatViewProps) {
   const onIsAtEndChange = useCallback((isAtEnd: boolean) => {
     if (
       !isAtEnd &&
+      timelineScrollModeRef.current === "anchoring-new-turn" &&
       liveFollowUserScrollGenerationRef.current === anchorUserScrollGenerationRef.current
     ) {
+      // Leaving the end during a send is our own doing: the new user message is
+      // being parked near the top while the reply streams in below it. Outside
+      // that window, leaving the end is the user scrolling, and scroll position
+      // — not the wheel/touch listeners, which can miss keyboard and scrollbar
+      // scrolling — is what decides whether live-follow survives.
       showScrollDebouncer.current.cancel();
       setShowScrollToBottom(false);
       return;
@@ -3756,6 +3765,12 @@ function ChatViewContent(props: ChatViewProps) {
       return;
     }
     if (liveFollowUserScrollGenerationRef.current !== anchorUserScrollGenerationRef.current) {
+      return;
+    }
+    // Opted out of live-follow entirely: the timeline never moves on its own.
+    // Positioning a freshly sent message is still allowed — that scroll is a
+    // direct result of the user pressing send.
+    if (!followTimelineLiveEdge && timelineScrollModeRef.current !== "anchoring-new-turn") {
       return;
     }
 
@@ -3812,6 +3827,7 @@ function ChatViewContent(props: ChatViewProps) {
     };
   }, [
     activeThread?.id,
+    followTimelineLiveEdge,
     timelineEntries,
     getActiveTimelineTurnMetrics,
     timelineRealContentOverflowsViewport,

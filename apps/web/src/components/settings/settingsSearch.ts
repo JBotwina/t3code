@@ -122,6 +122,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "follow-live-edge",
+    title: "Follow new output",
+    to: "/settings/general",
+  },
+  {
     id: "read-aloud-engine",
     title: "Read aloud engine",
     to: "/settings/general",

@@ -593,6 +593,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.autoOpenPlanSidebar !== DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar
         ? ["Auto-open task panel"]
         : []),
+      ...(settings.followTimelineLiveEdge !== DEFAULT_UNIFIED_SETTINGS.followTimelineLiveEdge
+        ? ["Follow new output"]
+        : []),
       ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
         ? ["Assistant output"]
         : []),
@@ -623,6 +626,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       isTextGenerationModelDirty,
       isBackgroundActivityDirty,
       settings.autoOpenPlanSidebar,
+      settings.followTimelineLiveEdge,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
       settings.addProjectBaseDirectory,
@@ -661,6 +665,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
+      followTimelineLiveEdge: DEFAULT_UNIFIED_SETTINGS.followTimelineLiveEdge,
       enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
@@ -1433,6 +1438,32 @@ export function GeneralSettingsPanel() {
                 updateSettings({ autoOpenPlanSidebar: Boolean(checked) })
               }
               aria-label="Open the task panel automatically"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("follow-live-edge")}
+          description="Keep the chat scrolled to the newest output while a response streams. Turn off to stay exactly where you scrolled."
+          resetAction={
+            settings.followTimelineLiveEdge !== DEFAULT_UNIFIED_SETTINGS.followTimelineLiveEdge ? (
+              <SettingResetButton
+                label="follow new output"
+                onClick={() =>
+                  updateSettings({
+                    followTimelineLiveEdge: DEFAULT_UNIFIED_SETTINGS.followTimelineLiveEdge,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.followTimelineLiveEdge}
+              onCheckedChange={(checked) =>
+                updateSettings({ followTimelineLiveEdge: Boolean(checked) })
+              }
+              aria-label="Follow new output while a response streams"
             />
           }
         />
