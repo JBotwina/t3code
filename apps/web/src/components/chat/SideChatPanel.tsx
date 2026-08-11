@@ -4,11 +4,14 @@ import { ArrowUpIcon, SquareIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { newMessageId } from "~/lib/utils";
+import { usePrimarySettings } from "../../hooks/useSettings";
 import { useThread } from "../../state/entities";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import ChatMarkdown from "../ChatMarkdown";
 import { Spinner } from "../ui/spinner";
+import { ReadAloudSurface } from "./ReadAloudSurface";
+import { buildSideChatFirstMessage } from "./useSideChat";
 import { cn } from "~/lib/utils";
 
 /**
@@ -22,19 +25,24 @@ import { cn } from "~/lib/utils";
 export function SideChatPanel({
   environmentId,
   threadId,
+  quote,
   markdownCwd,
 }: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
+  /** The passage the side chat was opened from, quoted above the transcript. */
+  readonly quote?: string;
   readonly markdownCwd?: string;
 }) {
   const threadRef = scopeThreadRef(environmentId, threadId);
   const thread = useThread(threadRef);
   const startTurn = useAtomCommand(threadEnvironment.startTurn, "side chat send");
   const interruptTurn = useAtomCommand(threadEnvironment.interruptTurn, "side chat interrupt");
+  const readAloudEngine = usePrimarySettings((settings) => settings.readAloud?.engine ?? "system");
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
   const messages = thread?.messages ?? [];
   const isRunning = thread?.session?.status === "running";
@@ -49,11 +57,23 @@ export function SideChatPanel({
     node.scrollTop = node.scrollHeight;
   }, [lastMessageId, streamingText]);
 
+  // The panel opens on a quotation with nothing asked yet, so the caret belongs
+  // in the composer.
+  useEffect(() => {
+    composerRef.current?.focus();
+  }, [threadId]);
+
   const send = useCallback(async () => {
     const text = draft.trim();
     if (!text || sending || !thread) return;
     setSending(true);
     setDraft("");
+    // The quotation is context, so it rides on the first question rather than
+    // being sent as a turn of its own.
+    const messageText =
+      messages.length === 0
+        ? buildSideChatFirstMessage({ quote: quote ?? "", question: text })
+        : text;
     const result = await startTurn({
       environmentId,
       input: {
@@ -61,7 +81,7 @@ export function SideChatPanel({
         message: {
           messageId: newMessageId(),
           role: "user",
-          text,
+          text: messageText,
           attachments: [],
         },
         modelSelection: thread.modelSelection,
@@ -76,7 +96,7 @@ export function SideChatPanel({
       // Put the text back rather than losing it to a failed send.
       setDraft(text);
     }
-  }, [draft, environmentId, sending, startTurn, thread, threadId]);
+  }, [draft, environmentId, messages.length, quote, sending, startTurn, thread, threadId]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== "Enter" || event.shiftKey) return;
@@ -87,10 +107,17 @@ export function SideChatPanel({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
+        {/* Only until the first question is asked: after that the quotation is
+            carried by the first user message, and showing both duplicates it. */}
         {messages.length === 0 ? (
-          <p className="text-muted-foreground text-xs">
-            Ask about the quoted passage. This chat runs in the same workspace as the main thread.
-          </p>
+          <>
+            {quote ? (
+              <blockquote className="border-primary/50 text-muted-foreground border-l-2 pl-2.5 text-xs whitespace-pre-wrap">
+                {quote}
+              </blockquote>
+            ) : null}
+            <p className="text-muted-foreground text-xs">Ask about this passage.</p>
+          </>
         ) : null}
         {messages.map((message) =>
           message.role === "user" ? (
@@ -100,12 +127,19 @@ export function SideChatPanel({
               </div>
             </div>
           ) : (
-            <div key={message.id} className="min-w-0 text-sm">
-              <ChatMarkdown
-                text={message.text || (message.streaming ? "" : "(empty response)")}
-                cwd={markdownCwd}
-                isStreaming={message.streaming}
-              />
+            <div key={message.id} className="relative min-w-0 text-sm">
+              <ReadAloudSurface
+                messageKey={String(message.id)}
+                enabled={!message.streaming}
+                engine={readAloudEngine}
+                environmentId={environmentId}
+              >
+                <ChatMarkdown
+                  text={message.text || (message.streaming ? "" : "(empty response)")}
+                  cwd={markdownCwd}
+                  isStreaming={message.streaming}
+                />
+              </ReadAloudSurface>
             </div>
           ),
         )}
@@ -120,6 +154,7 @@ export function SideChatPanel({
       <div className="border-border/60 border-t p-2">
         <div className="flex items-end gap-2 rounded-xl border border-border/60 bg-card px-2 py-1.5">
           <textarea
+            ref={composerRef}
             value={draft}
             onChange={(event) => setDraft(event.currentTarget.value)}
             onKeyDown={onKeyDown}
