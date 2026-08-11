@@ -102,6 +102,7 @@ import {
   renderProviderTraitsPicker,
 } from "./composerProviderState";
 import { ContextWindowMeter } from "./ContextWindowMeter";
+import { ReadAloudAutoplayToggle } from "./ReadAloudAutoplayToggle";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../pierre-icons";
 import { cn, randomUUID } from "~/lib/utils";
@@ -413,6 +414,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 }) {
   return (
     <>
+      <ReadAloudAutoplayToggle />
       {props.activeContextWindow ? (
         <ContextWindowMeter
           usage={props.activeContextWindow}

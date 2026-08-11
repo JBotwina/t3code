@@ -47,7 +47,7 @@ import {
 import ChatMarkdown from "../ChatMarkdown";
 import { readAloudController } from "../../lib/readAloud/controller";
 import { ReadAloudSurface } from "./ReadAloudSurface";
-import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
+import { usePrimarySettings } from "../../hooks/useSettings";
 import {
   BotIcon,
   CheckIcon,
@@ -60,7 +60,6 @@ import {
   MessageCircleIcon,
   MousePointerClickIcon,
   PaintbrushIcon,
-  PlayIcon,
   MinusIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -196,50 +195,7 @@ function TimelineLoadEarlierHeader({
     </div>
   );
 }
-/**
- * Sits under the newest message so it can be flipped in the dead time between
- * sending and the reply landing — which is exactly when the user decides they
- * would rather listen than read. No label: the icon is the state.
- */
-function ReadAloudAutoplayToggle() {
-  const autoplay = usePrimarySettings((settings) => settings.readAloud?.autoplay ?? false);
-  const updateSettings = useUpdatePrimarySettings();
-
-  return (
-    <div className="mx-auto flex w-full max-w-3xl justify-end px-1">
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              role="switch"
-              aria-checked={autoplay}
-              aria-label="Read new replies aloud"
-              onClick={() => updateSettings({ readAloud: { autoplay: !autoplay } })}
-              className={cn(
-                "flex size-6 items-center justify-center rounded-full border transition-colors hover:cursor-pointer",
-                autoplay
-                  ? "border-primary/40 bg-primary/15 text-primary"
-                  : "border-transparent text-muted-foreground/50 hover:text-muted-foreground",
-              )}
-            />
-          }
-        >
-          <PlayIcon className={cn("size-3", autoplay && "fill-current")} />
-        </TooltipTrigger>
-        <TooltipPopup side="top">
-          {autoplay ? "Stop reading new replies aloud" : "Read new replies aloud"}
-        </TooltipPopup>
-      </Tooltip>
-    </div>
-  );
-}
-
-const TIMELINE_LIST_FOOTER = (
-  <div className="pb-3 sm:pb-4">
-    <ReadAloudAutoplayToggle />
-  </div>
-);
+const TIMELINE_LIST_FOOTER = <div className="h-3 sm:h-4" />;
 const EMPTY_TIMELINE_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
 const TIMELINE_MAINTAIN_SCROLL_AT_END = {
   animated: false,
