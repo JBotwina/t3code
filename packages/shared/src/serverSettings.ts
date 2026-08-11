@@ -181,6 +181,7 @@ export function applyServerSettingsPatch(
           } = patch.readAloud;
           const currentReadAloud = current.readAloud ?? {
             engine: "system" as const,
+            autoplay: false,
             elevenLabsApiKeyConfigured: false,
             inworldApiKeyConfigured: false,
           };

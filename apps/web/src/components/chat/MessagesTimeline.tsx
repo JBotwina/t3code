@@ -45,8 +45,9 @@ import {
   resolveFileDiffPath,
 } from "../../lib/diffRendering";
 import ChatMarkdown from "../ChatMarkdown";
+import { readAloudController } from "../../lib/readAloud/controller";
 import { ReadAloudSurface } from "./ReadAloudSurface";
-import { usePrimarySettings } from "../../hooks/useSettings";
+import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import {
   BotIcon,
   CheckIcon,
@@ -59,6 +60,7 @@ import {
   MessageCircleIcon,
   MousePointerClickIcon,
   PaintbrushIcon,
+  PlayIcon,
   MinusIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -139,6 +141,12 @@ interface TimelineRowSharedState {
   workspaceRoot: string | undefined;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   activeThreadEnvironmentId: EnvironmentId;
+  /**
+   * The newest assistant message. Autoplay and the read-aloud shortcut only
+   * ever act on this one; every older reply stays click-to-play.
+   */
+  latestAssistantMessageKey: string | null;
+  readAloudAutoplay: boolean;
   onRevertUserMessage: (messageId: MessageId) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
@@ -188,7 +196,50 @@ function TimelineLoadEarlierHeader({
     </div>
   );
 }
-const TIMELINE_LIST_FOOTER = <div className="h-3 sm:h-4" />;
+/**
+ * Sits under the newest message so it can be flipped in the dead time between
+ * sending and the reply landing — which is exactly when the user decides they
+ * would rather listen than read. No label: the icon is the state.
+ */
+function ReadAloudAutoplayToggle() {
+  const autoplay = usePrimarySettings((settings) => settings.readAloud?.autoplay ?? false);
+  const updateSettings = useUpdatePrimarySettings();
+
+  return (
+    <div className="mx-auto flex w-full max-w-3xl justify-end px-1">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoplay}
+              aria-label="Read new replies aloud"
+              onClick={() => updateSettings({ readAloud: { autoplay: !autoplay } })}
+              className={cn(
+                "flex size-6 items-center justify-center rounded-full border transition-colors hover:cursor-pointer",
+                autoplay
+                  ? "border-primary/40 bg-primary/15 text-primary"
+                  : "border-transparent text-muted-foreground/50 hover:text-muted-foreground",
+              )}
+            />
+          }
+        >
+          <PlayIcon className={cn("size-3", autoplay && "fill-current")} />
+        </TooltipTrigger>
+        <TooltipPopup side="top">
+          {autoplay ? "Stop reading new replies aloud" : "Read new replies aloud"}
+        </TooltipPopup>
+      </Tooltip>
+    </div>
+  );
+}
+
+const TIMELINE_LIST_FOOTER = (
+  <div className="pb-3 sm:pb-4">
+    <ReadAloudAutoplayToggle />
+  </div>
+);
 const EMPTY_TIMELINE_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
 const TIMELINE_MAINTAIN_SCROLL_AT_END = {
   animated: false,
@@ -502,6 +553,17 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     };
   }, [timelineViewportElement, rows.length]);
 
+  const readAloudAutoplay = usePrimarySettings((settings) => settings.readAloud?.autoplay ?? false);
+  const latestAssistantMessageKey = useMemo(() => {
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+      const row = rows[index];
+      if (row?.kind === "message" && row.message.role === "assistant") {
+        return String(row.message.id);
+      }
+    }
+    return null;
+  }, [rows]);
+
   const sharedState = useMemo<TimelineRowSharedState>(
     () => ({
       timestampFormat,
@@ -512,6 +574,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workspaceRoot,
       skills,
       activeThreadEnvironmentId,
+      latestAssistantMessageKey,
+      readAloudAutoplay,
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
@@ -528,6 +592,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workspaceRoot,
       skills,
       activeThreadEnvironmentId,
+      latestAssistantMessageKey,
+      readAloudAutoplay,
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
@@ -573,7 +639,14 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   return (
     <TimelineRowCtx value={sharedState}>
       <TimelineRowActivityCtx value={activityState}>
-        <div ref={setTimelineViewportElement} className="relative h-full min-h-0">
+        <div
+          ref={setTimelineViewportElement}
+          className="relative h-full min-h-0"
+          // Focus decides which transcript autoplay and the shortcut act on;
+          // capture, because the events land on rows, not here.
+          onFocusCapture={() => readAloudController.setActiveScope("timeline")}
+          onPointerDownCapture={() => readAloudController.setActiveScope("timeline")}
+        >
           <LegendList<MessagesTimelineRow>
             ref={listRef}
             data={rows}
@@ -1114,15 +1187,27 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
   const readAloudEngine = usePrimarySettings((settings) => settings.readAloud?.engine ?? "system");
   const isStreaming = Boolean(row.message.streaming);
+  const messageKey = String(row.message.id);
+  const isLatestAssistant = ctx.latestAssistantMessageKey === messageKey;
+
+  // Autoplay is for replies that arrive while the user waits, so it needs the
+  // arrival, not merely the message. Opening a thread whose last reply is long
+  // finished must stay silent — and this ref, reset by the remount that a
+  // thread switch forces, is what tells the two apart.
+  const arrivedWhileWatchingRef = useRef(false);
+  if (isStreaming) arrivedWhileWatchingRef.current = true;
 
   return (
     <>
       <div className="relative min-w-0 px-1 py-0.5">
         <ReadAloudSurface
-          messageKey={String(row.message.id)}
+          messageKey={messageKey}
           enabled={!isStreaming}
           engine={readAloudEngine}
           environmentId={ctx.activeThreadEnvironmentId}
+          scope="timeline"
+          isLatest={isLatestAssistant}
+          autoPlay={ctx.readAloudAutoplay && isLatestAssistant && arrivedWhileWatchingRef.current}
         >
           <ChatMarkdown
             text={messageText}

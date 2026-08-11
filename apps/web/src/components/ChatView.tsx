@@ -249,9 +249,11 @@ import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
+import { readAloudController } from "../lib/readAloud/controller";
 import { ReadAloudMiniPlayer } from "./chat/ReadAloudMiniPlayer";
 import { SideChatPanel } from "./chat/SideChatPanel";
 import { SideChatSelectionAction } from "./chat/SideChatSelectionAction";
+import { resolveSideChatQuote, startSideChatPointerTracking } from "./chat/sideChatHoverTarget";
 import { useOpenSideChat } from "./chat/useSideChat";
 import { ChatHeader } from "./chat/ChatHeader";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
@@ -3653,6 +3655,9 @@ function ChatViewContent(props: ChatViewProps) {
     parentThread: activeServerThread,
     projectId: activeProject?.id ?? null,
   });
+  // The side-chat shortcut quotes whatever the pointer is resting on, and a
+  // keydown does not carry a position — so the position has to be kept.
+  useEffect(() => startSideChatPointerTracking(), []);
   const followTimelineLiveEdge = useClientSettings(
     (clientSettings) => clientSettings.followTimelineLiveEdge,
   );
@@ -4717,6 +4722,26 @@ function ChatViewContent(props: ChatViewProps) {
         event.preventDefault();
         event.stopPropagation();
         toggleRightPanel();
+        return;
+      }
+
+      if (command === "readAloud.toggle") {
+        event.preventDefault();
+        event.stopPropagation();
+        // The controller knows which transcript has focus and which reply in it
+        // is newest; this only has to say "toggle".
+        readAloudController.toggleLatest();
+        return;
+      }
+
+      if (command === "sideChat.fromSelection") {
+        const quote = resolveSideChatQuote(timelineContainerRef.current);
+        // No passage under the pointer and nothing selected: let the key
+        // through rather than swallowing it to do nothing.
+        if (!quote) return;
+        event.preventDefault();
+        event.stopPropagation();
+        void openSideChatForSelection(quote);
         return;
       }
 

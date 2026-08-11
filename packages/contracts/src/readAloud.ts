@@ -47,6 +47,12 @@ export const ReadAloudSettings = Schema.Struct({
   engine: ReadAloudEngine.pipe(
     Schema.withDecodingDefault(Effect.succeed("system" as const satisfies ReadAloudEngine)),
   ),
+  /**
+   * Speak each reply as it finishes, without being asked. Global rather than
+   * per-thread — it is a listening mode the user is in, not a property of one
+   * conversation — but only the thread on screen is ever read aloud.
+   */
+  autoplay: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Client-visible only; never persisted. Injected when settings are read. */
   elevenLabsApiKeyConfigured: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
@@ -58,6 +64,7 @@ export type ReadAloudSettings = typeof ReadAloudSettings.Type;
 
 export const ReadAloudSettingsPatch = Schema.Struct({
   engine: Schema.optionalKey(ReadAloudEngine),
+  autoplay: Schema.optionalKey(Schema.Boolean),
   /** Set a new key, or null/empty to clear. Never returned on read. */
   elevenLabsApiKey: Schema.optionalKey(Schema.NullOr(TrimmedString)),
   /** Set a new key, or null/empty to clear. Never returned on read. */

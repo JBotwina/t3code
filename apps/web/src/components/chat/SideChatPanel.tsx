@@ -10,6 +10,7 @@ import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import ChatMarkdown from "../ChatMarkdown";
 import { Spinner } from "../ui/spinner";
+import { readAloudController } from "../../lib/readAloud/controller";
 import { ReadAloudSurface } from "./ReadAloudSurface";
 import { buildSideChatFirstMessage } from "./useSideChat";
 import { cn } from "~/lib/utils";
@@ -39,6 +40,7 @@ export function SideChatPanel({
   const startTurn = useAtomCommand(threadEnvironment.startTurn, "side chat send");
   const interruptTurn = useAtomCommand(threadEnvironment.interruptTurn, "side chat interrupt");
   const readAloudEngine = usePrimarySettings((settings) => settings.readAloud?.engine ?? "system");
+  const readAloudAutoplay = usePrimarySettings((settings) => settings.readAloud?.autoplay ?? false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -48,6 +50,12 @@ export function SideChatPanel({
   const isRunning = thread?.session?.status === "running";
   const lastMessageId = messages.at(-1)?.id ?? null;
   const streamingText = messages.at(-1)?.text ?? "";
+  const latestAssistantMessageId =
+    messages.findLast((message) => message.role === "assistant")?.id ?? null;
+  // Same rule as the main timeline: autoplay is for a reply that lands while
+  // the panel is open, never for one already sitting in a reopened side chat.
+  const arrivedWhileWatchingRef = useRef(false);
+  if (isRunning) arrivedWhileWatchingRef.current = true;
 
   // Side chats are short and the panel is narrow; following the tail here is
   // the wanted behaviour, unlike the main timeline.
@@ -58,10 +66,15 @@ export function SideChatPanel({
   }, [lastMessageId, streamingText]);
 
   // The panel opens on a quotation with nothing asked yet, so the caret belongs
-  // in the composer.
+  // in the composer — which also makes this the transcript being read.
   useEffect(() => {
+    readAloudController.setActiveScope("side-chat");
     composerRef.current?.focus();
   }, [threadId]);
+
+  // Closing the panel hands the shortcut back to the main timeline; leaving the
+  // scope pointing at a panel that no longer exists would mute it entirely.
+  useEffect(() => () => readAloudController.setActiveScope("timeline"), []);
 
   const send = useCallback(async () => {
     const text = draft.trim();
@@ -105,7 +118,13 @@ export function SideChatPanel({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      className="flex h-full min-h-0 flex-col"
+      // Clicking or typing into the panel makes it the transcript that autoplay
+      // and the read-aloud shortcut act on.
+      onFocusCapture={() => readAloudController.setActiveScope("side-chat")}
+      onPointerDownCapture={() => readAloudController.setActiveScope("side-chat")}
+    >
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
         {/* Only until the first question is asked: after that the quotation is
             carried by the first user message, and showing both duplicates it. */}
@@ -133,6 +152,13 @@ export function SideChatPanel({
                 enabled={!message.streaming}
                 engine={readAloudEngine}
                 environmentId={environmentId}
+                scope="side-chat"
+                isLatest={message.id === latestAssistantMessageId}
+                autoPlay={
+                  readAloudAutoplay &&
+                  message.id === latestAssistantMessageId &&
+                  arrivedWhileWatchingRef.current
+                }
               >
                 <ChatMarkdown
                   text={message.text || (message.streaming ? "" : "(empty response)")}

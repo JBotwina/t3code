@@ -20,6 +20,7 @@ import {
   hasCachedAudio,
   readAloudController,
   setCachedAudio,
+  type ReadAloudScope,
   type ReadAloudStatus,
 } from "../../lib/readAloud/controller";
 import { textOffsetFromPoint } from "../../lib/readAloud/domRanges";
@@ -78,12 +79,21 @@ export function ReadAloudSurface({
   enabled,
   engine,
   environmentId,
+  scope = "timeline",
+  isLatest = false,
+  autoPlay = false,
   children,
 }: {
   readonly messageKey: string;
   readonly enabled: boolean;
   readonly engine: ReadAloudEngine;
   readonly environmentId: EnvironmentId | null;
+  /** Which transcript this surface belongs to. */
+  readonly scope?: ReadAloudScope;
+  /** The newest reply in that transcript — the one the shortcut targets. */
+  readonly isLatest?: boolean;
+  /** Start speaking from the first sentence as soon as the surface is ready. */
+  readonly autoPlay?: boolean;
   readonly children: ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -384,6 +394,29 @@ export function ReadAloudSurface({
     event.preventDefault();
     void playSentence(idx);
   };
+
+  // Only the newest reply is reachable by the shortcut. Older messages stay
+  // clickable, which is how the user walks back through a thread by hand.
+  useEffect(() => {
+    if (!isLatest || !enabled) return;
+    return readAloudController.registerLatest(scope, {
+      messageKey,
+      play: () => void playSentence(0),
+    });
+  }, [enabled, isLatest, messageKey, playSentence, scope]);
+
+  // Autoplay fires once per message. The caller decides *which* message
+  // qualifies; all this owes it is that a re-render, a resize, or a rate
+  // change never restarts the reply from the top.
+  const autoPlayedRef = useRef(false);
+  useEffect(() => {
+    if (!autoPlay || !enabled || autoPlayedRef.current) return;
+    // Consumed either way: a reply that landed while the user was reading the
+    // other transcript has missed its moment, and must not ambush them later.
+    autoPlayedRef.current = true;
+    if (readAloudController.activeScope() !== scope) return;
+    void playSentence(0);
+  }, [autoPlay, enabled, playSentence, scope]);
 
   // Stop playback when the engine changes mid-read (the closure chain would
   // otherwise keep speaking with the old engine).

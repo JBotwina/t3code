@@ -1009,6 +1009,7 @@ const makeWsRpcLayer = (
             ...settings,
             readAloud: {
               engine: settings.readAloud?.engine ?? "system",
+              autoplay: settings.readAloud?.autoplay ?? false,
               elevenLabsApiKeyConfigured,
               inworldApiKeyConfigured,
             },

@@ -25,8 +25,24 @@ export type ReadAloudOwner = {
   readonly setRate: (rate: number) => void;
 };
 
+/**
+ * Which transcript the user is reading. Autoplay and the toggle shortcut both
+ * act on "the newest reply in the conversation I am looking at", and the main
+ * timeline and a side chat are on screen at the same time — so something has
+ * to say which one that is. Focus does.
+ */
+export type ReadAloudScope = "timeline" | "side-chat";
+
+/** The newest reply in a scope, and how to start reading it. */
+type LatestSurface = {
+  readonly messageKey: string;
+  readonly play: () => void;
+};
+
 let owner: ReadAloudOwner | null = null;
 let snapshot: ReadAloudSnapshot | null = null;
+let activeScope: ReadAloudScope = "timeline";
+const latestByScope = new Map<ReadAloudScope, LatestSurface>();
 const listeners = new Set<() => void>();
 
 // ── Playback rate ──────────────────────────────────────────────
@@ -92,6 +108,39 @@ export const readAloudController = {
   },
   activeMessageKey(): string | null {
     return snapshot?.messageKey ?? null;
+  },
+
+  // ── Scope and the newest reply ───────────────────────────────
+
+  activeScope(): ReadAloudScope {
+    return activeScope;
+  },
+  /** Called when a transcript takes focus or is clicked into. */
+  setActiveScope(scope: ReadAloudScope) {
+    activeScope = scope;
+  },
+  /**
+   * Registered by the surface holding the newest reply in a scope, and only
+   * while it is readable. Returns the unregister.
+   */
+  registerLatest(scope: ReadAloudScope, surface: LatestSurface): () => void {
+    latestByScope.set(scope, surface);
+    return () => {
+      if (latestByScope.get(scope) === surface) latestByScope.delete(scope);
+    };
+  },
+  /**
+   * The shortcut: stop whatever is speaking, or start the newest reply in the
+   * transcript being read. Deliberately asymmetric — stopping should work on
+   * any message, including an older one the user clicked into, while starting
+   * only ever picks the newest.
+   */
+  toggleLatest() {
+    if (owner) {
+      owner.halt();
+      return;
+    }
+    latestByScope.get(activeScope)?.play();
   },
   rate(): number {
     return rate;
